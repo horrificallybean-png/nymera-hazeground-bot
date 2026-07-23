@@ -1,0 +1,76 @@
+const { getGuild, save } = require('./store');
+const { nymeraEmbed, COLORS } = require('../lib/theme');
+
+const prophecies = [
+  'A moonlit kindness will alter the shape of your week.',
+  'The path through the fog is not the safest—only the truest.',
+  'A hidden reward waits for the first soul brave enough to speak.',
+  'Tonight, the old walls remember every promise made within them.'
+];
+const questions = [
+  'What game should Nymera summon for the community tonight?',
+  'Which corner of Spellbound Hazeground holds the best story?',
+  'What title would you earn after one night in the Haze?',
+  'What small victory deserves to be celebrated today?'
+];
+
+async function postDailyActivity(client) {
+  const today = new Date().toISOString().slice(0, 10);
+  for (const guild of client.guilds.cache.values()) {
+    const settings = await getGuild(guild.id);
+    if (!settings.activityChannelId || settings.lastActivityDate === today) continue;
+    const channel = guild.channels.cache.get(settings.activityChannelId);
+    if (!channel?.isTextBased()) continue;
+    const prophecy = prophecies[Math.floor(Math.random() * prophecies.length)];
+    const question = questions[Math.floor(Math.random() * questions.length)];
+    await channel.send({ embeds: [nymeraEmbed('Daily Prophecy', prophecy)] }).catch(() => {});
+    await channel.send({ embeds: [nymeraEmbed('A Question from the Veil', question, COLORS.green)] }).catch(() => {});
+    settings.lastActivityDate = today;
+    await save();
+  }
+}
+
+async function postRandomEvent(client) {
+  for (const guild of client.guilds.cache.values()) {
+    const settings = await getGuild(guild.id);
+    if (!settings.activityChannelId || (settings.lastEventAt && Date.now() - new Date(settings.lastEventAt) < 6 * 60 * 60 * 1000)) continue;
+    const channel = guild.channels.cache.get(settings.activityChannelId);
+    if (!channel?.isTextBased()) continue;
+    const reward = 50 + Math.floor(Math.random() * 151);
+    await channel.send({ embeds: [nymeraEmbed('A Treasure Stirs', `The mist reveals a communal treasure of **${reward} Spellmarks**. The first member to use `/hunt` may claim the glory.`, COLORS.green)] }).catch(() => {});
+    settings.lastEventAt = new Date().toISOString();
+    await save();
+  }
+}
+
+async function reviveQuietChats(client) {
+  const prompts = [
+    'The Haze has grown quiet. What is one small thing that made you smile today?',
+    'A lantern flickers in the empty hall. Which game should Nymera summon next?',
+    'The archives crave a confession: what gothic tale, game, or film has been haunting you lately?',
+    'The moon is listening. Share a song that belongs on a Spellbound playlist.'
+  ];
+  for (const guild of client.guilds.cache.values()) {
+    const settings = await getGuild(guild.id);
+    const deadChat = settings.deadChat;
+    if (!deadChat?.channelId || !deadChat.lastHumanMessageAt) continue;
+    const idleFor = Date.now() - new Date(deadChat.lastHumanMessageAt).getTime();
+    const cooldown = 24 * 60 * 60 * 1000;
+    if (idleFor < deadChat.idleHours * 60 * 60 * 1000 || (deadChat.lastRevivalAt && Date.now() - new Date(deadChat.lastRevivalAt).getTime() < cooldown)) continue;
+    const channel = guild.channels.cache.get(deadChat.channelId);
+    if (!channel?.isTextBased()) continue;
+    const roleMention = deadChat.roleId ? `<@&${deadChat.roleId}> ` : '';
+    await channel.send({ content: roleMention || undefined, embeds: [nymeraEmbed('The Haze Stirs', prompts[Math.floor(Math.random() * prompts.length)], COLORS.green)], allowedMentions: deadChat.roleId ? { roles: [deadChat.roleId] } : { parse: [] } }).catch(() => {});
+    deadChat.lastRevivalAt = new Date().toISOString();
+    await save();
+  }
+}
+
+function startActivity(client) {
+  postDailyActivity(client).catch(console.error);
+  setInterval(() => postDailyActivity(client).catch(console.error), 60 * 60 * 1000);
+  setInterval(() => postRandomEvent(client).catch(console.error), 60 * 60 * 1000);
+  setInterval(() => reviveQuietChats(client).catch(console.error), 15 * 60 * 1000);
+}
+
+module.exports = { startActivity };

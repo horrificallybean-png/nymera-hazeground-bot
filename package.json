@@ -1,0 +1,20 @@
+{
+  "name": "nymera-hazeground",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nymera Hazeground, the mystical guardian of Spellbound Hazeground.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "deploy": "node src/deploy-commands.js"
+    ,"migrate:mongo": "node scripts/migrate-json-to-mongo.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "discord.js": "^14.22.1",
+    "dotenv": "^16.6.1",
+    "openai": "^6.0.0",
+    "mongoose": "^8.18.0"
+  }
+}
