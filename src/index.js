@@ -10,6 +10,7 @@ const companionCommands = require('./commands/companion');
 const systemCommands = require('./commands/systems');
 const gameCommands = require('./commands/games');
 const roleCommands = require('./commands/roles');
+const radioCommands = require('./commands/radio');
 const handleMessage = require('./events/messageCreate');
 const welcomeMember = require('./events/guildMemberAdd');
 const goodbyeMember = require('./events/guildMemberRemove');
@@ -22,7 +23,7 @@ const { getVerification } = require('./services/verification');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildInvites, GatewayIntentBits.MessageContent] });
 client.commands = new Collection();
-for (const command of [...generalCommands, ...companionCommands, ...economyCommands, ...socialCommands, ...moderationCommands, ...communityCommands, ...systemCommands, ...gameCommands, ...roleCommands]) client.commands.set(command.data.name, command);
+for (const command of [...generalCommands, ...companionCommands, ...economyCommands, ...socialCommands, ...moderationCommands, ...communityCommands, ...systemCommands, ...gameCommands, ...roleCommands, ...radioCommands]) client.commands.set(command.data.name, command);
 
 client.once(Events.ClientReady, ready => { console.log(`Nymera watches as ${ready.user.tag}`); initializeInviteCache().catch(console.error); startActivity(client); setInterval(() => endGiveaways().catch(console.error), 60000); });
 client.on(Events.MessageCreate, async message => { await moderateMessage(message); if (!message.deleted) { await handleAutoGame(message); await handleMessage(message); } });
