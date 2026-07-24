@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const { getGuild, save } = require('../services/store');
 const { nymeraEmbed, COLORS } = require('../lib/theme');
+const { getGuildSettings, updateGuildSettings } = require('../services/guildSettings');
 
 module.exports = [
   {
@@ -16,19 +17,25 @@ module.exports = [
       .addSubcommand(sub => sub.setName('activity').setDescription('Set the automatic activity channel.').addChannelOption(option => option.setName('channel').setDescription('Activity channel').addChannelTypes(ChannelType.GuildText).setRequired(true)))
       .addSubcommand(sub => sub.setName('levels').setDescription('Set the level-up announcement channel.').addChannelOption(option => option.setName('channel').setDescription('Level-up channel').addChannelTypes(ChannelType.GuildText).setRequired(true)))
       .addSubcommand(sub => sub.setName('dead-chat').setDescription('Configure quiet-chat revival prompts.').addChannelOption(option => option.setName('channel').setDescription('Channel to revive').addChannelTypes(ChannelType.GuildText).setRequired(true)).addIntegerOption(option => option.setName('hours').setDescription('Hours of silence before a prompt, 2–72').setMinValue(2).setMaxValue(72).setRequired(true)).addRoleOption(option => option.setName('role').setDescription('Optional role to ping')))
+      .addSubcommand(sub => sub.setName('test-activity').setDescription('Send an automatic game now to test the activity channel.'))
       .addSubcommand(sub => sub.setName('logs').setDescription('Set the moderation log channel.').addChannelOption(option => option.setName('channel').setDescription('Log channel').addChannelTypes(ChannelType.GuildText).setRequired(true)))
       .addSubcommand(sub => sub.setName('link-filter').setDescription('Turn link filtering on or off.').addBooleanOption(option => option.setName('enabled').setDescription('Whether to remove ordinary links').setRequired(true))),
     async execute(interaction) {
-      const guild = await getGuild(interaction.guildId);
       const action = interaction.options.getSubcommand();
-      if (action === 'welcome') guild.welcomeChannelId = interaction.options.getChannel('channel').id;
-      if (action === 'goodbye') guild.goodbyeChannelId = interaction.options.getChannel('channel').id;
-      if (action === 'activity') guild.activityChannelId = interaction.options.getChannel('channel').id;
-      if (action === 'levels') guild.levelChannelId = interaction.options.getChannel('channel').id;
-      if (action === 'dead-chat') guild.deadChat = { ...guild.deadChat, channelId: interaction.options.getChannel('channel').id, roleId: interaction.options.getRole('role')?.id || null, idleHours: interaction.options.getInteger('hours') };
-      if (action === 'logs') guild.logChannelId = interaction.options.getChannel('channel').id;
-      if (action === 'link-filter') guild.linkFilter = interaction.options.getBoolean('enabled');
-      await save();
+      if (action === 'test-activity') {
+        const { postAutoGame } = require('../services/activity');
+        await postAutoGame(interaction.client, interaction.guildId);
+        return interaction.reply({ content: 'An automatic game was sent to the configured activity channel.', ephemeral: true });
+      }
+      const patch = {};
+      if (action === 'welcome') patch.welcomeChannelId = interaction.options.getChannel('channel').id;
+      if (action === 'goodbye') patch.goodbyeChannelId = interaction.options.getChannel('channel').id;
+      if (action === 'activity') patch.activityChannelId = interaction.options.getChannel('channel').id;
+      if (action === 'levels') patch.levelChannelId = interaction.options.getChannel('channel').id;
+      if (action === 'dead-chat') patch.deadChat = { channelId: interaction.options.getChannel('channel').id, roleId: interaction.options.getRole('role')?.id || null, idleHours: interaction.options.getInteger('hours'), lastHumanMessageAt: new Date().toISOString(), lastRevivalAt: null };
+      if (action === 'logs') patch.logChannelId = interaction.options.getChannel('channel').id;
+      if (action === 'link-filter') patch.linkFilter = interaction.options.getBoolean('enabled');
+      await updateGuildSettings(interaction.guildId, patch);
       await interaction.reply({ embeds: [nymeraEmbed('The Realm Is Aligned', `Configuration **${action}** has been updated.`, COLORS.green)], ephemeral: true });
     }
   },

@@ -1,10 +1,12 @@
 const { getGuild, data, save } = require('../services/store');
 const { nymeraEmbed } = require('../lib/theme');
 const { audit } = require('../services/logging');
+const { getGuildSettings } = require('../services/guildSettings');
 
 module.exports = async member => {
-  const settings = await getGuild(member.guild.id);
-  const autoRole = settings.autoRoleId && member.guild.roles.cache.get(settings.autoRoleId);
+  const settings = await getGuildSettings(member.guild.id);
+  const localSettings = await getGuild(member.guild.id);
+  const autoRole = localSettings.autoRoleId && member.guild.roles.cache.get(localSettings.autoRoleId);
   if (autoRole?.editable) await member.roles.add(autoRole, 'Nymera automatic join role').catch(() => {});
   const channel = settings.welcomeChannelId && member.guild.channels.cache.get(settings.welcomeChannelId);
   if (channel?.isTextBased()) await channel.send({ embeds: [nymeraEmbed('A New Soul Arrives', `Welcome, ${member}. The Hazeground watches kindly. Seek `/help` when the mist confuses you.`)] });
