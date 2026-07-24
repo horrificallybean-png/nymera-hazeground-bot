@@ -28,12 +28,13 @@ module.exports = [{
       return interaction.reply({ embeds: [nymeraEmbed('Haunted Radio', session ? `Streaming lo-fi in <#${session.channelId}>.` : 'The radio is currently silent.', session ? COLORS.green : COLORS.danger)], ephemeral: true });
     }
     const channel = interaction.options.getChannel('channel');
+    await interaction.deferReply();
     try {
       await startRadio(interaction.guild, channel);
-      await interaction.reply({ embeds: [nymeraEmbed('Haunted Radio', `Nymera is now streaming lo-fi in ${channel}.`, COLORS.green)] });
+      await interaction.editReply({ embeds: [nymeraEmbed('Haunted Radio', `Nymera is now streaming lo-fi in ${channel}.`, COLORS.green)] });
     } catch (error) {
       console.error('Could not start Haunted Radio:', error);
-      await interaction.reply({ content: 'I could not join or play in that voice channel. Check my Connect and Speak permissions.', ephemeral: true });
+      await interaction.editReply({ content: 'I could not join or play in that voice channel. Check my Connect and Speak permissions.' });
     }
   }
 }];
