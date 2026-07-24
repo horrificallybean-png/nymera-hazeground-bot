@@ -1,5 +1,6 @@
 const { getGuild, save } = require('./store');
 const { nymeraEmbed, COLORS } = require('../lib/theme');
+const { ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
 
 const prophecies = [
   'A moonlit kindness will alter the shape of your week.',
@@ -71,6 +72,34 @@ function startActivity(client) {
   setInterval(() => postDailyActivity(client).catch(console.error), 60 * 60 * 1000);
   setInterval(() => postRandomEvent(client).catch(console.error), 60 * 60 * 1000);
   setInterval(() => reviveQuietChats(client).catch(console.error), 15 * 60 * 1000);
+  setInterval(() => postAutoGame(client).catch(console.error), 2 * 60 * 60 * 1000);
+}
+
+async function postAutoGame(client) {
+  for (const guild of client.guilds.cache.values()) {
+    const settings = await getGuild(guild.id);
+    const channel = settings.activityChannelId && guild.channels.cache.get(settings.activityChannelId);
+    if (!channel?.isTextBased()) continue;
+    client.autoGames ||= new Map();
+    const reward = 40 + Math.floor(Math.random() * 61);
+    const roll = Math.random();
+    const kind = roll < 1 / 3 ? 'word' : roll < 2 / 3 ? 'number' : 'treasure';
+    if (kind === 'word') {
+      const games = [{ scrambled: 'LLEPS', answer: 'spell' }, { scrambled: 'NOMDO', answer: 'moon' }, { scrambled: 'NEVAR', answer: 'raven' }]; const game = games[Math.floor(Math.random() * games.length)];
+      client.autoGames.set(channel.id, { type: 'word', answer: game.answer, reward });
+      await channel.send({ embeds: [nymeraEmbed('Unscramble the Spell', `First to solve **${game.scrambled}** earns **${reward} Spellmarks**!`, COLORS.green)] }).catch(() => {}); continue;
+    }
+    if (kind === 'number') {
+      const answer = 1 + Math.floor(Math.random() * 20);
+      client.autoGames.set(channel.id, { type: 'number', answer, reward });
+      await channel.send({ embeds: [nymeraEmbed('Ghost Count', `Nymera has chosen a number from **1–20**. First correct guess earns **${reward} Spellmarks**!`, COLORS.green)] }).catch(() => {});
+      continue;
+    }
+    
+    const id = `${guild.id}:${Date.now()}:${reward}`;
+    const button = new ButtonBuilder().setCustomId(`autogame:${id}`).setLabel('Claim the treasure').setStyle(ButtonStyle.Primary);
+    await channel.send({ embeds: [nymeraEmbed('A Treasure Drop', `A forgotten satchel rises from the fog. First to claim it earns **${reward} Spellmarks**!`, COLORS.green)], components: [new ActionRowBuilder().addComponents(button)] }).catch(() => {});
+  }
 }
 
 module.exports = { startActivity };

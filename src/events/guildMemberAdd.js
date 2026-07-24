@@ -4,6 +4,8 @@ const { audit } = require('../services/logging');
 
 module.exports = async member => {
   const settings = await getGuild(member.guild.id);
+  const autoRole = settings.autoRoleId && member.guild.roles.cache.get(settings.autoRoleId);
+  if (autoRole?.editable) await member.roles.add(autoRole, 'Nymera automatic join role').catch(() => {});
   const channel = settings.welcomeChannelId && member.guild.channels.cache.get(settings.welcomeChannelId);
   if (channel?.isTextBased()) await channel.send({ embeds: [nymeraEmbed('A New Soul Arrives', `Welcome, ${member}. The Hazeground watches kindly. Seek `/help` when the mist confuses you.`)] });
   const invites = await member.guild.invites.fetch().catch(() => null);

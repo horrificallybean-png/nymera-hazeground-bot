@@ -9,6 +9,7 @@ const commands = [
   ...require('./commands/community')
   ,...require('./commands/systems')
   ,...require('./commands/games')
+  ,...require('./commands/roles')
 ].map(command => command.data.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(config.token);

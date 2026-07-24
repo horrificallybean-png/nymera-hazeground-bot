@@ -9,20 +9,22 @@ const generalCommands = require('./commands/general');
 const companionCommands = require('./commands/companion');
 const systemCommands = require('./commands/systems');
 const gameCommands = require('./commands/games');
+const roleCommands = require('./commands/roles');
 const handleMessage = require('./events/messageCreate');
 const welcomeMember = require('./events/guildMemberAdd');
 const goodbyeMember = require('./events/guildMemberRemove');
 const moderateMessage = require('./events/moderateMessage');
+const handleAutoGame = require('./events/autoGames');
 const { startActivity } = require('./services/activity');
 const { data, save } = require('./services/store');
 const { audit } = require('./services/logging');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildInvites, GatewayIntentBits.MessageContent] });
 client.commands = new Collection();
-for (const command of [...generalCommands, ...companionCommands, ...economyCommands, ...socialCommands, ...moderationCommands, ...communityCommands, ...systemCommands, ...gameCommands]) client.commands.set(command.data.name, command);
+for (const command of [...generalCommands, ...companionCommands, ...economyCommands, ...socialCommands, ...moderationCommands, ...communityCommands, ...systemCommands, ...gameCommands, ...roleCommands]) client.commands.set(command.data.name, command);
 
 client.once(Events.ClientReady, ready => { console.log(`Nymera watches as ${ready.user.tag}`); initializeInviteCache().catch(console.error); startActivity(client); setInterval(() => endGiveaways().catch(console.error), 60000); });
-client.on(Events.MessageCreate, async message => { await moderateMessage(message); if (!message.deleted) await handleMessage(message); });
+client.on(Events.MessageCreate, async message => { await moderateMessage(message); if (!message.deleted) { await handleAutoGame(message); await handleMessage(message); } });
 client.on(Events.GuildMemberAdd, welcomeMember);
 client.on(Events.GuildMemberRemove, goodbyeMember);
 client.on(Events.MessageDelete, message => { if (message.guild) audit(message.guild, 'Message Deleted', `A message from ${message.author || 'an unknown member'} was deleted in ${message.channel}.`).catch(console.error); });
@@ -31,6 +33,8 @@ client.on(Events.InviteCreate, invite => { client.inviteCache ||= new Map(); cli
 client.on(Events.InteractionCreate, async interaction => {
   if (interaction.isButton()) {
     if (interaction.customId === 'nymera_verify') { const settings = await require('./services/store').getGuild(interaction.guildId); const role = interaction.guild.roles.cache.get(settings.verification.roleId); if (!role?.editable) return interaction.reply({ content: 'Verification is not configured correctly.', ephemeral: true }); await interaction.member.roles.add(role, 'Nymera verification'); return interaction.reply({ content: 'The seal recognizes you. Welcome to the Hazeground.', ephemeral: true }); }
+    if (interaction.customId.startsWith('selfrole:')) { const role = interaction.guild.roles.cache.get(interaction.customId.split(':')[1]); if (!role?.editable) return interaction.reply({ content: 'I cannot manage that role.', ephemeral: true }); const hasRole = interaction.member.roles.cache.has(role.id); if (hasRole) await interaction.member.roles.remove(role, 'Nymera self-role toggle'); else await interaction.member.roles.add(role, 'Nymera self-role toggle'); return interaction.reply({ content: hasRole ? `Removed ${role}.` : `Granted ${role}.`, ephemeral: true }); }
+    if (interaction.customId.startsWith('autogame:')) { const [, guildId, , reward] = interaction.customId.split(':'); const button = interaction.message.components[0].components[0]; if (button.disabled) return interaction.reply({ content: 'Another soul claimed this treasure.', ephemeral: true }); await require('./services/economy').awardSpellmarks(guildId, interaction.user.id, Number(reward), 'Automatic treasure drop'); await interaction.update({ content: `✦ ${interaction.user} claimed **${reward} Spellmarks** from the fog!`, embeds: [], components: [] }); return; }
     if (interaction.customId.startsWith('giveaway:')) { const id = interaction.customId.split(':')[1], giveaway = data.giveaways[id]; if (!giveaway || giveaway.ended) return interaction.reply({ content: 'This giveaway has already ended.', ephemeral: true }); if (!giveaway.entries.includes(interaction.user.id)) giveaway.entries.push(interaction.user.id); await save(); return interaction.reply({ content: 'Your name has entered the archives.', ephemeral: true }); }
     return;
   }
