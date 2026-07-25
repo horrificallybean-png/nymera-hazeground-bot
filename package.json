@@ -1,6 +1,6 @@
 {
   "name": "nymera-hazeground-auto-games-sqlite",
-  "version": "5.9.2",
+  "version": "5.9.3",
   "private": true,
   "description": "Complete SQLite Nymera bot with rotating automatic Discord games",
   "type": "module",

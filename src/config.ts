@@ -5,7 +5,6 @@ const schema = z.object({
   DISCORD_TOKEN: z.string().min(1),
   DISCORD_CLIENT_ID: z.string().min(1),
   DISCORD_GUILD_ID: z.string().optional(),
-  DATABASE_URL: z.string().min(1),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-5-mini"),
   LOG_LEVEL: z.string().default("info"),
