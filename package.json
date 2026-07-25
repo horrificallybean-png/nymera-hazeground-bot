@@ -1,22 +1,43 @@
 {
-  "name": "nymera-hazeground",
-  "version": "1.0.0",
+  "name": "nymera-hazeground-auto-games-sqlite",
+  "version": "5.9.0",
   "private": true,
-  "description": "Nymera Hazeground, the mystical guardian of Spellbound Hazeground.",
-  "main": "src/index.js",
+  "description": "Complete SQLite Nymera bot with rotating automatic Discord games",
+  "type": "module",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "deploy": "node src/deploy-commands.js"
-    ,"migrate:mongo": "node scripts/migrate-json-to-mongo.js"
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src --max-warnings=0",
+    "check": "tsc --noEmit",
+    "register": "tsx src/register-commands.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "node scripts/ensure-sqlite.mjs && prisma db push",
+    "prisma:setup": "node scripts/ensure-sqlite.mjs && prisma db push",
+    "prisma:dev": "prisma migrate dev",
+    "postinstall": "prisma generate"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "dependencies": {
-    "discord.js": "^14.22.1",
-    "dotenv": "^16.6.1",
-    "openai": "^6.0.0",
-    "mongoose": "^8.18.0",
-    "@discordjs/voice": "^0.18.0",
-    "ffmpeg-static": "^5.2.0"
+    "@prisma/client": "^6.7.0",
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.5.0",
+    "node-cron": "^4.2.1",
+    "openai": "^5.10.1",
+    "pino": "^9.7.0",
+    "pino-pretty": "^13.0.0",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.29.0",
+    "@types/node": "^22.15.32",
+    "eslint": "^9.29.0",
+    "prisma": "^6.7.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.34.1"
   }
 }

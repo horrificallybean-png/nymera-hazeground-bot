@@ -1,0 +1,330 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model GuildConfig {
+  guildId            String   @id
+  welcomeChannelId   String?
+  goodbyeChannelId   String?
+  logChannelId       String?
+  autoRoleId         String?
+  scheduledChannelId String?
+  aiEnabled          Boolean  @default(true)
+  automodEnabled     Boolean  @default(true)
+  blockInvites       Boolean  @default(false)
+  blockedWords       String   @default("[]")
+  scheduleCron       String   @default("0 14 * * *")
+  timezone           String   @default("America/Denver")
+  ticketCategoryId   String?
+  starboardChannelId String?
+  starboardThreshold Int      @default(3)
+  levelUpEnabled     Boolean  @default(true)
+  levelUpChannelId   String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  warnings           Warning[]
+}
+
+model LevelReward {
+  guildId String
+  level   Int
+  roleId  String
+
+  @@id([guildId, level])
+  @@index([guildId, roleId])
+}
+
+model Warning {
+  id          Int         @id @default(autoincrement())
+  guildId     String
+  userId      String
+  moderatorId String
+  reason      String
+  createdAt   DateTime    @default(now())
+  guild       GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@index([guildId, userId])
+}
+
+model AiMemory {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  channelId String
+  userId    String
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([guildId, channelId, createdAt])
+}
+
+model ScheduledPost {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  channelId String
+  content   String
+  cron      String
+  timezone  String   @default("America/Denver")
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([guildId, enabled])
+}
+
+model EconomyAccount {
+  guildId       String
+  userId        String
+  wallet        Int      @default(0)
+  bank          Int      @default(0)
+  xp            Int      @default(0)
+  level         Int      @default(0)
+  dailyAt       DateTime?
+  weeklyAt      DateTime?
+  workAt        DateTime?
+  messages      Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  inventory     InventoryItem[]
+  questProgress UserQuest[]
+  achievements  UserAchievement[]
+
+  @@id([guildId, userId])
+  @@index([guildId, wallet])
+  @@index([guildId, xp])
+}
+
+model EconomyTransaction {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  userId    String
+  type      String
+  amount    Int
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([guildId, userId, createdAt])
+}
+
+model ShopItem {
+  id          Int      @id @default(autoincrement())
+  guildId     String
+  key         String
+  name        String
+  description String
+  price       Int
+  stock       Int?
+  roleId      String?
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  inventory   InventoryItem[]
+
+  @@unique([guildId, key])
+  @@index([guildId, enabled])
+}
+
+model InventoryItem {
+  id        Int            @id @default(autoincrement())
+  guildId   String
+  userId    String
+  itemId    Int
+  quantity  Int            @default(1)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  account   EconomyAccount @relation(fields: [guildId, userId], references: [guildId, userId], onDelete: Cascade)
+  item      ShopItem       @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, userId, itemId])
+}
+
+model Quest {
+  id          Int      @id @default(autoincrement())
+  guildId     String
+  key         String
+  name        String
+  description String
+  kind        String
+  target      Int
+  reward      Int
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  progress    UserQuest[]
+
+  @@unique([guildId, key])
+}
+
+model UserQuest {
+  id        Int            @id @default(autoincrement())
+  guildId   String
+  userId    String
+  questId   Int
+  progress  Int            @default(0)
+  claimedAt DateTime?
+  periodKey String
+  account   EconomyAccount @relation(fields: [guildId, userId], references: [guildId, userId], onDelete: Cascade)
+  quest     Quest          @relation(fields: [questId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, userId, questId, periodKey])
+}
+
+model Achievement {
+  id          Int      @id @default(autoincrement())
+  guildId     String
+  key         String
+  name        String
+  description String
+  reward      Int      @default(0)
+  createdAt   DateTime @default(now())
+  users       UserAchievement[]
+
+  @@unique([guildId, key])
+}
+
+model UserAchievement {
+  id            Int            @id @default(autoincrement())
+  guildId       String
+  userId        String
+  achievementId Int
+  unlockedAt    DateTime       @default(now())
+  account       EconomyAccount @relation(fields: [guildId, userId], references: [guildId, userId], onDelete: Cascade)
+  achievement   Achievement    @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, userId, achievementId])
+}
+
+model GameStat {
+  guildId    String
+  userId     String
+  game       String
+  played     Int      @default(0)
+  won        Int      @default(0)
+  lost       Int      @default(0)
+  earned     Int      @default(0)
+  wagered    Int      @default(0)
+  bestScore  Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@id([guildId, userId, game])
+  @@index([guildId, won])
+  @@index([guildId, earned])
+}
+
+model GameResult {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  userId    String
+  game      String
+  outcome   String
+  wager     Int      @default(0)
+  payout    Int      @default(0)
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([guildId, userId, createdAt])
+}
+
+model DailyDraw {
+  guildId   String
+  userId    String
+  dateKey   String
+  cardKey   String
+  reversed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@id([guildId, userId, dateKey])
+}
+
+model MagicFavorite {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  userId    String
+  kind      String
+  entryKey  String
+  createdAt DateTime @default(now())
+
+  @@unique([guildId, userId, kind, entryKey])
+  @@index([guildId, userId])
+}
+
+model Ticket {
+  id        Int       @id @default(autoincrement())
+  guildId   String
+  channelId String    @unique
+  ownerId   String
+  subject   String
+  status    String    @default("open")
+  closedBy  String?
+  createdAt DateTime  @default(now())
+  closedAt  DateTime?
+
+  @@index([guildId, ownerId, status])
+}
+
+model ReactionRole {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  channelId String
+  messageId String
+  emoji     String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  @@unique([guildId, messageId, emoji])
+  @@index([guildId, messageId])
+}
+
+model Giveaway {
+  id          Int       @id @default(autoincrement())
+  guildId     String
+  channelId   String
+  messageId   String?   @unique
+  prize       String
+  winnerCount Int       @default(1)
+  endsAt      DateTime
+  endedAt     DateTime?
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  entries     GiveawayEntry[]
+
+  @@index([guildId, endsAt, endedAt])
+}
+
+model GiveawayEntry {
+  id         Int      @id @default(autoincrement())
+  giveawayId Int
+  userId     String
+  createdAt  DateTime @default(now())
+  giveaway   Giveaway @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+
+  @@unique([giveawayId, userId])
+}
+
+model StarboardEntry {
+  guildId           String
+  sourceMessageId   String
+  sourceChannelId   String
+  starboardMessageId String
+  authorId          String
+  stars             Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@id([guildId, sourceMessageId])
+}
+
+model AutoGameConfig {
+  guildId         String   @id
+  channelId       String
+  enabled         Boolean  @default(true)
+  intervalMinutes Int      @default(90)
+  nextGameIndex   Int      @default(0)
+  lastRunAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

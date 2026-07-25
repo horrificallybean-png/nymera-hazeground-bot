@@ -1,0 +1,40 @@
+import { createHash } from "node:crypto";
+import { herbs, tarotCards } from "../data-magic.js";
+
+const synodicMonth = 29.53058867;
+const knownNewMoon = Date.UTC(2000, 0, 6, 18, 14);
+
+export function moonPhase(date = new Date()) {
+  const days = (date.getTime() - knownNewMoon) / 86_400_000;
+  const age = ((days % synodicMonth) + synodicMonth) % synodicMonth;
+  const fraction = age / synodicMonth;
+  const phases = [
+    ["New Moon", "🌑"], ["Waxing Crescent", "🌒"], ["First Quarter", "🌓"], ["Waxing Gibbous", "🌔"],
+    ["Full Moon", "🌕"], ["Waning Gibbous", "🌖"], ["Last Quarter", "🌗"], ["Waning Crescent", "🌘"]
+  ] as const;
+  const index = Math.floor((fraction * 8) + 0.5) % 8;
+  return { name: phases[index]![0], emoji: phases[index]![1], age, illumination: (1 - Math.cos(2 * Math.PI * fraction)) / 2 };
+}
+
+export function deterministicDraw(seed: string) {
+  const bytes = createHash("sha256").update(seed).digest();
+  return { card: tarotCards[bytes[0]! % tarotCards.length]!, reversed: bytes[1]! % 2 === 1 };
+}
+
+const planets = ["Saturn", "Jupiter", "Mars", "Sun", "Venus", "Mercury", "Moon"] as const;
+const dayRulers = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn"] as const;
+export function symbolicPlanetaryHour(date = new Date()) {
+  const ruler = dayRulers[date.getDay()]!;
+  const start = planets.indexOf(ruler);
+  return { planet: planets[(start + date.getHours()) % 7]!, hour: date.getHours() + 1, ruler };
+}
+
+export function renderMagicTemplate(content: string, date = new Date()) {
+  const phase = moonPhase(date);
+  const draw = deterministicDraw(`server-post:${date.toISOString().slice(0, 10)}`);
+  const herb = herbs[Math.floor(date.getTime() / 86_400_000) % herbs.length]!;
+  return content
+    .replaceAll("{{moon_phase}}", `${phase.emoji} **${phase.name}** — about ${Math.round(phase.illumination * 100)}% illuminated.`)
+    .replaceAll("{{daily_tarot}}", `🔮 **${draw.card.name}${draw.reversed ? " — reversed" : ""}**\n${draw.reversed ? draw.card.reversed : draw.card.upright}\n*Reflection:* ${draw.card.prompt}`)
+    .replaceAll("{{herb_lore}}", `🌿 **${herb.name}**\n${herb.lore}\n*Safety:* ${herb.safety}`);
+}
