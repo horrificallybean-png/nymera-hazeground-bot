@@ -321,8 +321,10 @@ model StarboardEntry {
 model AutoGameConfig {
   guildId         String   @id
   channelId       String
+  pingRoleId      String?
   enabled         Boolean  @default(true)
   intervalMinutes Int      @default(90)
+  answerSeconds   Int      @default(300)
   nextGameIndex   Int      @default(0)
   lastRunAt       DateTime?
   createdAt       DateTime @default(now())

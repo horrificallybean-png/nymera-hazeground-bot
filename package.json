@@ -1,6 +1,6 @@
 {
   "name": "nymera-hazeground-auto-games-sqlite",
-  "version": "5.9.3",
+  "version": "5.10.0",
   "private": true,
   "description": "Complete SQLite Nymera bot with rotating automatic Discord games",
   "type": "module",
@@ -12,6 +12,7 @@
     "lint": "eslint src --max-warnings=0",
     "check": "tsc --noEmit",
     "register": "tsx src/register-commands.ts",
+    "register:built": "node dist/register-commands.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "node scripts/ensure-sqlite.mjs && prisma db push",
     "prisma:setup": "node scripts/ensure-sqlite.mjs && prisma db push",

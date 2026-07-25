@@ -10,7 +10,9 @@ export const autoGameCommands: Command[] = [{
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand(s => s.setName("setup").setDescription("Enable automatic games")
       .addChannelOption(o => o.setName("channel").setDescription("Game channel").setRequired(true).addChannelTypes(ChannelType.GuildText))
-      .addIntegerOption(o => o.setName("minutes").setDescription("Minutes between games").setMinValue(15).setMaxValue(1440)))
+      .addIntegerOption(o => o.setName("minutes").setDescription("Minutes between games (default: 90)").setMinValue(15).setMaxValue(1440))
+      .addIntegerOption(o => o.setName("answer_minutes").setDescription("Minutes allowed to answer (default: 5)").setMinValue(1).setMaxValue(60))
+      .addRoleOption(o => o.setName("ping_role").setDescription("Optional role to notify for each game")))
     .addSubcommand(s => s.setName("disable").setDescription("Disable automatic games"))
     .addSubcommand(s => s.setName("status").setDescription("Show automatic-game settings"))
     .addSubcommand(s => s.setName("start-now").setDescription("Start the next game immediately")),
@@ -19,12 +21,31 @@ export const autoGameCommands: Command[] = [{
     if (sub === "setup") {
       const channel = i.options.getChannel("channel", true);
       const minutes = i.options.getInteger("minutes") ?? 90;
+      const answerMinutes = i.options.getInteger("answer_minutes") ?? 5;
+      const pingRole = i.options.getRole("ping_role");
       await prisma.autoGameConfig.upsert({
         where: { guildId: i.guildId! },
-        update: { channelId: channel.id, intervalMinutes: minutes, enabled: true, lastRunAt: new Date() },
-        create: { guildId: i.guildId!, channelId: channel.id, intervalMinutes: minutes, lastRunAt: new Date() }
+        update: {
+          channelId: channel.id,
+          intervalMinutes: minutes,
+          answerSeconds: answerMinutes * 60,
+          pingRoleId: pingRole?.id ?? null,
+          enabled: true,
+          lastRunAt: new Date()
+        },
+        create: {
+          guildId: i.guildId!,
+          channelId: channel.id,
+          intervalMinutes: minutes,
+          answerSeconds: answerMinutes * 60,
+          pingRoleId: pingRole?.id,
+          lastRunAt: new Date()
+        }
       });
-      await i.reply({ content: `Automatic games enabled in ${channel} every ${minutes} minutes. The first scheduled game will start in ${minutes} minutes. Use \`/auto-games start-now\` to test now.`, ephemeral: true });
+      await i.reply({
+        content: `Automatic games enabled in ${channel} every ${minutes} minutes. Each round stays open for ${answerMinutes} minute${answerMinutes === 1 ? "" : "s"}${pingRole ? ` and pings ${pingRole}` : ""}. Use \`/auto-games start-now\` to test now.`,
+        ephemeral: true
+      });
       return;
     }
     if (sub === "disable") {
@@ -35,7 +56,7 @@ export const autoGameCommands: Command[] = [{
     const config = await prisma.autoGameConfig.findUnique({ where: { guildId: i.guildId! } });
     if (sub === "status") {
       await i.reply({ content: config
-        ? `Status: **${config.enabled ? "enabled" : "disabled"}**\nChannel: <#${config.channelId}>\nInterval: ${config.intervalMinutes} minutes\nLast game: ${config.lastRunAt ? `<t:${Math.floor(config.lastRunAt.getTime() / 1000)}:R>` : "never"}`
+        ? `Status: **${config.enabled ? "enabled" : "disabled"}**\nChannel: <#${config.channelId}>\nInterval: ${config.intervalMinutes} minutes\nAnswer window: ${Math.ceil(config.answerSeconds / 60)} minutes\nPing role: ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "none"}\nLast game: ${config.lastRunAt ? `<t:${Math.floor(config.lastRunAt.getTime() / 1000)}:R>` : "never"}`
         : "Automatic games are not configured.", ephemeral: true });
       return;
     }

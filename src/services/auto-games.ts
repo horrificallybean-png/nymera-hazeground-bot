@@ -39,11 +39,15 @@ export async function launchAutoGame(client: Client, guildId: string) {
     data: { lastRunAt: new Date(), nextGameIndex: { increment: 1 } }
   });
   const message = await (channel as TextChannel).send({
-    content: `## ${round.title}\n${round.question}\n\nChoose within **60 seconds**. Correct answers earn **100 Spellmarks**.`,
-    components: [row]
+    content: `${config.pingRoleId ? `<@&${config.pingRoleId}>\n\n` : ""}## ${round.title}\n${round.question}\n\nChoose within **${Math.ceil(config.answerSeconds / 60)} minute${config.answerSeconds === 60 ? "" : "s"}**. Correct answers earn **100 Spellmarks**.`,
+    components: [row],
+    allowedMentions: { roles: config.pingRoleId ? [config.pingRoleId] : [] }
   });
   const answered = new Set<string>();
-  const collector = message.createMessageComponentCollector({ componentType: ComponentType.Button, time: 60_000 });
+  const collector = message.createMessageComponentCollector({
+    componentType: ComponentType.Button,
+    time: config.answerSeconds * 1000
+  });
   collector.on("collect", async interaction => {
     if (!interaction.customId.startsWith(`autogame:${sessionId}:`)) return;
     if (answered.has(interaction.user.id)) {
