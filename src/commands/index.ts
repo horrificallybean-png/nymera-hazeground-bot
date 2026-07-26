@@ -9,6 +9,11 @@ import { magicCommands } from "./magic.js";
 import { communityCommands } from "./community.js";
 import { autoGameCommands } from "./auto-games.js";
 import { levelCommands } from "./levels.js";
+import { craftingCommands } from "./crafting.js";
+import { economyExpansionCommands } from "./economy-expansion.js";
+import { progressionCommands } from "./progression.js";
+import { eventCommands } from "./events.js";
+import { utilityExpansionCommands } from "./utility-expansion.js";
 
 export const commands: Command[] = [
   ...utilityCommands,
@@ -20,7 +25,12 @@ export const commands: Command[] = [
   ...magicCommands,
   ...communityCommands,
   ...autoGameCommands
-  , ...levelCommands
+  , ...levelCommands,
+  ...craftingCommands,
+  ...economyExpansionCommands,
+  ...progressionCommands,
+  ...eventCommands,
+  ...utilityExpansionCommands
 ];
 
 export const commandMap = new Map(commands.map(command => [command.data.name, command]));

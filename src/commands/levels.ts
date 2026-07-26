@@ -24,7 +24,7 @@ export const levelCommands: Command[] = [
       await i.reply({ embeds: [new EmbedBuilder()
         .setColor(0x6f42c1)
         .setAuthor({ name: user.username, iconURL: user.displayAvatarURL() })
-        .setTitle(`Level ${account.level}`)
+        .setTitle(`Prestige ${account.prestige} • Level ${account.level}`)
         .setDescription(`**${progress.toLocaleString()} / ${needed.toLocaleString()} XP** toward level ${account.level + 1}`)
         .addFields(
           { name: "Total XP", value: account.xp.toLocaleString(), inline: true },
@@ -45,7 +45,7 @@ export const levelCommands: Command[] = [
         .setColor(0x6f42c1)
         .setTitle("Level Leaderboard")
         .setDescription(rows.map((row, index) =>
-          `**${index + 1}.** ${userMention(row.userId)} — Level ${row.level} • ${row.xp.toLocaleString()} XP`
+          `**${index + 1}.** ${userMention(row.userId)} — Prestige ${row.prestige} • Level ${row.level} • ${row.xp.toLocaleString()} XP`
         ).join("\n") || "No one has earned XP yet.")] });
     }
   },

@@ -15,6 +15,11 @@ model GuildConfig {
   autoRoleId         String?
   scheduledChannelId String?
   aiEnabled          Boolean  @default(true)
+  aiMode             String   @default("mystic")
+  aiAutoReplyEnabled Boolean  @default(false)
+  aiAutoReplyChance  Int      @default(10)
+  aiModerationEnabled Boolean @default(false)
+  aiReviewChannelId  String?
   automodEnabled     Boolean  @default(true)
   blockInvites       Boolean  @default(false)
   blockedWords       String   @default("[]")
@@ -63,6 +68,16 @@ model AiMemory {
   @@index([guildId, channelId, createdAt])
 }
 
+model AiUserMemory {
+  guildId  String
+  userId   String
+  enabled  Boolean  @default(false)
+  summary  String   @default("")
+  updatedAt DateTime @updatedAt
+
+  @@id([guildId, userId])
+}
+
 model ScheduledPost {
   id        Int      @id @default(autoincrement())
   guildId   String
@@ -71,6 +86,7 @@ model ScheduledPost {
   cron      String
   timezone  String   @default("America/Denver")
   enabled   Boolean  @default(true)
+  lastVariantIndex Int @default(-1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -82,12 +98,19 @@ model EconomyAccount {
   userId        String
   wallet        Int      @default(0)
   bank          Int      @default(0)
+  bankLevel     Int      @default(0)
+  bankInterestAt DateTime?
   xp            Int      @default(0)
   level         Int      @default(0)
+  prestige      Int      @default(0)
+  equippedTitle String?
+  equippedBadge String?
+  equippedBackground String?
   dailyAt       DateTime?
   weeklyAt      DateTime?
   workAt        DateTime?
   messages      Int      @default(0)
+  crafted       Int      @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   inventory     InventoryItem[]
@@ -97,6 +120,90 @@ model EconomyAccount {
   @@id([guildId, userId])
   @@index([guildId, wallet])
   @@index([guildId, xp])
+}
+
+model ReferralCode {
+  guildId  String
+  userId   String
+  code     String   @unique
+  createdAt DateTime @default(now())
+
+  @@id([guildId, userId])
+}
+
+model ReferralClaim {
+  guildId       String
+  invitedUserId String
+  inviterId     String
+  code          String
+  claimedAt     DateTime @default(now())
+
+  @@id([guildId, invitedUserId])
+  @@index([guildId, inviterId])
+}
+
+model CovenChallenge {
+  guildId     String
+  periodKey   String
+  target      Int      @default(500)
+  progress    Int      @default(0)
+  reward      Int      @default(500)
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  contributors CovenContribution[]
+
+  @@id([guildId, periodKey])
+}
+
+model CovenContribution {
+  guildId   String
+  periodKey String
+  userId    String
+  progress  Int      @default(0)
+  claimedAt DateTime?
+  challenge CovenChallenge @relation(fields: [guildId, periodKey], references: [guildId, periodKey], onDelete: Cascade)
+
+  @@id([guildId, periodKey, userId])
+  @@index([guildId, userId])
+}
+
+model EventProgress {
+  guildId    String
+  userId     String
+  eventKey   String
+  periodKey  String
+  progress   Int      @default(0)
+  claimedAt  DateTime?
+  detail     String?
+  updatedAt  DateTime @updatedAt
+
+  @@id([guildId, userId, eventKey, periodKey])
+  @@index([guildId, eventKey, periodKey])
+}
+
+model Reminder {
+  id        Int       @id @default(autoincrement())
+  guildId   String
+  channelId String
+  userId    String
+  content   String
+  kind      String    @default("general")
+  dueAt     DateTime
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([dueAt, sentAt])
+  @@index([guildId, userId, sentAt])
+}
+
+model OracleDraw {
+  guildId  String
+  userId   String
+  dateKey  String
+  cardKey  String
+  createdAt DateTime @default(now())
+
+  @@id([guildId, userId, dateKey])
 }
 
 model EconomyTransaction {
@@ -141,6 +248,41 @@ model InventoryItem {
   item      ShopItem       @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@unique([guildId, userId, itemId])
+}
+
+model Familiar {
+  id         Int       @id @default(autoincrement())
+  guildId    String
+  userId     String
+  speciesKey String
+  name       String
+  rarity     String
+  level      Int       @default(1)
+  xp         Int       @default(0)
+  bond       Int       @default(0)
+  active     Boolean   @default(false)
+  lastCareAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([guildId, userId])
+  @@index([guildId, rarity])
+}
+
+model ItemTrade {
+  id              Int       @id @default(autoincrement())
+  guildId         String
+  senderId        String
+  recipientId     String
+  itemId          Int
+  quantity        Int
+  requestedMarks  Int       @default(0)
+  status          String    @default("pending")
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime
+  completedAt     DateTime?
+
+  @@index([guildId, recipientId, status])
+  @@index([guildId, senderId, status])
 }
 
 model Quest {

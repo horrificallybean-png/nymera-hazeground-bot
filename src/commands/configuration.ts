@@ -13,17 +13,7 @@ import { ensureGuild, prisma } from "../database.js";
 const mentalHealthMarker = "🌿 **Gentle Mental Health Check-In**";
 
 function mentalHealthContent(roleId?: string) {
-  return `${roleId ? `${roleMention(roleId)}\n\n` : ""}${mentalHealthMarker}
-
-How are you feeling today?
-
-🟢 I’m doing well
-🟡 I’m managing
-🟠 I’m struggling
-🔴 I could use support
-💜 I’d rather not say, but I’m here
-
-Take a breath, drink some water, and be kind to yourself. You never have to share more than you’re comfortable sharing. If you need support, please reach out to someone you trust or a qualified professional.`;
+  return `${roleId ? `${roleMention(roleId)}\n\n` : ""}${mentalHealthMarker}\n\n{{daily_wellness}}\n\nThis is peer support, not professional care.`;
 }
 
 async function saveMentalHealthSchedule(input: {
@@ -112,7 +102,7 @@ export const configurationCommands: Command[] = [
     data: new SlashCommandBuilder().setName("schedule").setDescription("Create a repeating scheduled post").setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
       .addChannelOption(o => o.setName("channel").setDescription("Destination").addChannelTypes(ChannelType.GuildText).setRequired(true))
       .addStringOption(o => o.setName("cron").setDescription("Cron, e.g. 0 14 * * *").setRequired(true))
-      .addStringOption(o => o.setName("content").setDescription("Post text").setRequired(true).setMaxLength(1800))
+      .addStringOption(o => o.setName("content").setDescription("Post text; separate rotating versions with |||").setRequired(true).setMaxLength(1800))
       .addStringOption(o => o.setName("timezone").setDescription("IANA zone, e.g. America/Denver")),
     async execute(i) {
       const expression = i.options.getString("cron", true);
@@ -125,6 +115,56 @@ export const configurationCommands: Command[] = [
         timezone: i.options.getString("timezone") ?? "America/Denver"
       } });
       await i.reply({ content: "Scheduled post saved. Restart the bot to load the new schedule.", ephemeral: true });
+    }
+  },
+  {
+    data: new SlashCommandBuilder().setName("daily-message").setDescription("Schedule a rotating daily community message")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      .addChannelOption(o => o.setName("channel").setDescription("Destination").setRequired(true).addChannelTypes(ChannelType.GuildText))
+      .addStringOption(o => o.setName("preset").setDescription("Message rotation").setRequired(true).addChoices(
+        { name: "Morning", value: "{{daily_morning}}" },
+        { name: "Midday", value: "{{daily_midday}}" },
+        { name: "Evening", value: "{{daily_evening}}" },
+        { name: "Night", value: "{{daily_night}}" },
+        { name: "Wellness", value: "{{daily_wellness}}" }
+      ))
+      .addStringOption(o => o.setName("cron").setDescription("Cron, e.g. 0 9 * * *").setRequired(true))
+      .addStringOption(o => o.setName("timezone").setDescription("IANA timezone, e.g. America/Denver")),
+    async execute(i) {
+      const expression = i.options.getString("cron", true);
+      if (!cron.validate(expression)) return void await i.reply({ content: "That cron expression is invalid.", ephemeral: true });
+      const post = await prisma.scheduledPost.create({ data: {
+        guildId: i.guildId!,
+        channelId: i.options.getChannel("channel", true).id,
+        cron: expression,
+        content: i.options.getString("preset", true),
+        timezone: i.options.getString("timezone") ?? "America/Denver"
+      } });
+      await i.reply({ content: `Rotating daily message #${post.id} saved. Restart Nymera to load it.`, ephemeral: true });
+    }
+  },
+  {
+    data: new SlashCommandBuilder().setName("scheduled-posts").setDescription("List or delete scheduled posts")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      .addSubcommand(s => s.setName("list").setDescription("List this server's scheduled posts"))
+      .addSubcommand(s => s.setName("delete").setDescription("Delete a scheduled post")
+        .addIntegerOption(o => o.setName("id").setDescription("Post ID from the list").setRequired(true).setMinValue(1))),
+    async execute(i) {
+      if (i.options.getSubcommand() === "delete") {
+        const result = await prisma.scheduledPost.deleteMany({
+          where: { id: i.options.getInteger("id", true), guildId: i.guildId! }
+        });
+        await i.reply({ content: result.count ? "Scheduled post deleted. Restart Nymera to unload it." : "Scheduled post not found.", ephemeral: true });
+        return;
+      }
+      const posts = await prisma.scheduledPost.findMany({
+        where: { guildId: i.guildId! },
+        orderBy: { id: "asc" }
+      });
+      await i.reply({
+        content: posts.map(post => `**#${post.id}** • <#${post.channelId}> • \`${post.cron}\` • ${post.content.slice(0, 70)}`).join("\n") || "No scheduled posts configured.",
+        ephemeral: true
+      });
     }
   },
   {

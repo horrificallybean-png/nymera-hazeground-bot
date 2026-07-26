@@ -54,6 +54,10 @@ export const economyCommands: Command[] = [
       const amount = i.options.getInteger("amount", true);
       const a = await getAccount(i.guildId!, i.user.id);
       if ((name === "deposit" ? a.wallet : a.bank) < amount) return void await i.reply({ content: "You do not have enough.", ephemeral: true });
+      const capacity = 5_000 * (a.bankLevel + 1);
+      if (name === "deposit" && a.bank + amount > capacity) {
+        return void await i.reply({ content: `Your bank can hold ${capacity} ${currency}. Use \`/bank upgrade\` for more room.`, ephemeral: true });
+      }
       await prisma.economyAccount.update({ ...accountKey(i.guildId!, i.user.id), data: name === "deposit"
         ? { wallet: { decrement: amount }, bank: { increment: amount } }
         : { wallet: { increment: amount }, bank: { decrement: amount } } });
@@ -176,9 +180,21 @@ export const economyCommands: Command[] = [
       await seedGuildEconomy(i.guildId!);
       const account = await getAccount(i.guildId!, i.user.id);
       const all = await prisma.achievement.findMany({ where: { guildId: i.guildId! } });
+      const [gameTotals, uniqueItems, familiarCount] = await Promise.all([
+        prisma.gameStat.aggregate({ where: { guildId: i.guildId!, userId: i.user.id }, _sum: { won: true } }),
+        prisma.inventoryItem.count({ where: { guildId: i.guildId!, userId: i.user.id, quantity: { gt: 0 } } }),
+        prisma.familiar.count({ where: { guildId: i.guildId!, userId: i.user.id, bond: { gt: 0 } } })
+      ]);
       for (const achievement of all) {
         const qualifies = (achievement.key === "first_1000" && account.wallet + account.bank >= 1000) ||
-          (achievement.key === "level_5" && account.level >= 5);
+          (achievement.key === "level_5" && account.level >= 5) ||
+          (achievement.key === "level_15" && account.level >= 15) ||
+          (achievement.key === "wealth_10000" && account.wallet + account.bank >= 10_000) ||
+          (achievement.key === "game_winner" && (gameTotals._sum.won ?? 0) >= 1) ||
+          (achievement.key === "collector_10" && uniqueItems >= 10) ||
+          (achievement.key === "familiar_friend" && familiarCount >= 1) ||
+          (achievement.key === "first_prestige" && account.prestige >= 1) ||
+          (achievement.key === "craft_10" && account.crafted >= 10);
         if (qualifies) {
           const existing = await prisma.userAchievement.findUnique({
             where: { guildId_userId_achievementId: { guildId: i.guildId!, userId: i.user.id, achievementId: achievement.id } }

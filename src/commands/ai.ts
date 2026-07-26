@@ -1,7 +1,8 @@
-import { SlashCommandBuilder } from "discord.js";
+import { ChannelType, EmbedBuilder, PermissionFlagsBits, SlashCommandBuilder } from "discord.js";
 import type { Command } from "../types.js";
 import { askNymera } from "../services/ai.js";
 import { trimDiscord } from "../utils/respond.js";
+import { ensureGuild, prisma } from "../database.js";
 
 export const aiCommands: Command[] = [{
   data: new SlashCommandBuilder().setName("ask").setDescription("Ask Nymera a question")
@@ -16,5 +17,76 @@ export const aiCommands: Command[] = [{
       prompt: i.options.getString("question", true)
     });
     await i.editReply(trimDiscord(answer));
+  }
+},
+{
+  data: new SlashCommandBuilder().setName("ai-settings").setDescription("Configure Nymera's AI personality and safety features")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addStringOption(o => o.setName("mode").setDescription("Conversation personality").addChoices(
+      { name: "Mystic", value: "mystic" },
+      { name: "Friendly", value: "friendly" },
+      { name: "Gothic Horror", value: "horror" },
+      { name: "Dead by Daylight", value: "dbd" },
+      { name: "Community Guide", value: "guide" }
+    ))
+    .addBooleanOption(o => o.setName("auto_replies").setDescription("Occasionally answer unmentioned questions"))
+    .addIntegerOption(o => o.setName("reply_chance").setDescription("Percent chance for eligible questions").setMinValue(1).setMaxValue(100))
+    .addBooleanOption(o => o.setName("ai_moderation").setDescription("Send AI suggestions to a staff review channel"))
+    .addChannelOption(o => o.setName("review_channel").setDescription("Private staff channel for AI suggestions").addChannelTypes(ChannelType.GuildText)),
+  async execute(i) {
+    const current = await ensureGuild(i.guildId!);
+    const mode = i.options.getString("mode") ?? current.aiMode;
+    const autoReplies = i.options.getBoolean("auto_replies") ?? current.aiAutoReplyEnabled;
+    const chance = i.options.getInteger("reply_chance") ?? current.aiAutoReplyChance;
+    const aiModeration = i.options.getBoolean("ai_moderation") ?? current.aiModerationEnabled;
+    const reviewChannel = i.options.getChannel("review_channel");
+    const updated = await prisma.guildConfig.update({
+      where: { guildId: i.guildId! },
+      data: {
+        aiMode: mode,
+        aiAutoReplyEnabled: autoReplies,
+        aiAutoReplyChance: chance,
+        aiModerationEnabled: aiModeration,
+        aiReviewChannelId: reviewChannel?.id ?? current.aiReviewChannelId
+      }
+    });
+    await i.reply({ embeds: [new EmbedBuilder().setColor(0x6f42c1).setTitle("Nymera AI Settings").addFields(
+      { name: "Mode", value: updated.aiMode, inline: true },
+      { name: "Automatic replies", value: updated.aiAutoReplyEnabled ? `${updated.aiAutoReplyChance}% of eligible questions` : "Off", inline: true },
+      { name: "AI moderation", value: updated.aiModerationEnabled ? `Suggestions → ${updated.aiReviewChannelId ? `<#${updated.aiReviewChannelId}>` : "review channel not set"}` : "Off" }
+    )], ephemeral: true });
+  }
+},
+{
+  data: new SlashCommandBuilder().setName("ai-memory").setDescription("Control your optional long-term AI memory")
+    .addSubcommand(s => s.setName("enable").setDescription("Allow Nymera to remember stable details you share"))
+    .addSubcommand(s => s.setName("disable").setDescription("Stop updating your long-term memory"))
+    .addSubcommand(s => s.setName("view").setDescription("View what Nymera remembers about you"))
+    .addSubcommand(s => s.setName("forget").setDescription("Permanently erase your long-term memory")),
+  async execute(i) {
+    const key = { guildId_userId: { guildId: i.guildId!, userId: i.user.id } };
+    const sub = i.options.getSubcommand();
+    if (sub === "forget") {
+      await prisma.aiUserMemory.deleteMany({ where: { guildId: i.guildId!, userId: i.user.id } });
+      await i.reply({ content: "Your long-term Nymera memory has been permanently erased.", ephemeral: true });
+      return;
+    }
+    if (sub === "view") {
+      const memory = await prisma.aiUserMemory.findUnique({ where: key });
+      await i.reply({ content: memory?.summary || "Nymera has no long-term memory saved for you.", ephemeral: true });
+      return;
+    }
+    const enabled = sub === "enable";
+    await prisma.aiUserMemory.upsert({
+      where: key,
+      update: { enabled },
+      create: { guildId: i.guildId!, userId: i.user.id, enabled }
+    });
+    await i.reply({
+      content: enabled
+        ? "Long-term memory enabled. Nymera may remember stable details you intentionally share. Use `/ai-memory forget` at any time."
+        : "Long-term memory disabled. Existing memory is retained but will not update; use `/ai-memory forget` to erase it.",
+      ephemeral: true
+    });
   }
 }];

@@ -29,10 +29,10 @@ export function symbolicPlanetaryHour(date = new Date()) {
   return { planet: planets[(start + date.getHours()) % 7]!, hour: date.getHours() + 1, ruler };
 }
 
-export function renderMagicTemplate(content: string, date = new Date()) {
+export function renderMagicTemplate(content: string, date = new Date(), rotation = Math.floor(date.getTime() / 86_400_000)) {
   const phase = moonPhase(date);
-  const draw = deterministicDraw(`server-post:${date.toISOString().slice(0, 10)}`);
-  const herb = herbs[Math.floor(date.getTime() / 86_400_000) % herbs.length]!;
+  const draw = deterministicDraw(`server-post:${rotation}`);
+  const herb = herbs[((rotation % herbs.length) + herbs.length) % herbs.length]!;
   return content
     .replaceAll("{{moon_phase}}", `${phase.emoji} **${phase.name}** — about ${Math.round(phase.illumination * 100)}% illuminated.`)
     .replaceAll("{{daily_tarot}}", `🔮 **${draw.card.name}${draw.reversed ? " — reversed" : ""}**\n${draw.reversed ? draw.card.reversed : draw.card.upright}\n*Reflection:* ${draw.card.prompt}`)

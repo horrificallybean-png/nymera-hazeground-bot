@@ -1,6 +1,6 @@
 import { randomInt } from "node:crypto";
 import { prisma } from "../database.js";
-import { accountKey, getAccount } from "./economy.js";
+import { accountKey, advanceQuestProgress, getAccount } from "./economy.js";
 
 export type GameOutcome = "win" | "loss" | "draw";
 
@@ -21,7 +21,7 @@ export async function settleGame(input: {
   const wager = input.wager ?? 0;
   const payout = input.payout ?? 0;
   await getAccount(input.guildId, input.userId);
-  return prisma.$transaction(async tx => {
+  const result = await prisma.$transaction(async tx => {
     const account = await tx.economyAccount.findUniqueOrThrow(accountKey(input.guildId, input.userId));
     if (wager < 0 || payout < 0 || account.wallet < wager) throw new Error("INSUFFICIENT_FUNDS");
     const net = payout - wager;
@@ -57,6 +57,9 @@ export async function settleGame(input: {
     }
     return { net, balance: account.wallet + net };
   });
+  await advanceQuestProgress(input.guildId, input.userId, "games");
+  if (input.outcome === "win") await advanceQuestProgress(input.guildId, input.userId, "wins");
+  return result;
 }
 
 export const triviaQuestions = [

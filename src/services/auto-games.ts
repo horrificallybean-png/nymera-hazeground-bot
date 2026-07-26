@@ -5,6 +5,7 @@ import {
 } from "discord.js";
 import { prisma } from "../database.js";
 import { logger } from "../logger.js";
+import { generateAutoGameRound } from "./ai.js";
 
 async function recordAutoGameAnswer(guildId: string, userId: string, won: boolean) {
   if (!won) return;
@@ -29,7 +30,8 @@ export async function launchAutoGame(client: Client, guildId: string) {
   if (!config?.enabled) return false;
   const channel = await client.channels.fetch(config.channelId).catch(() => null);
   if (!channel || !channel.isTextBased() || !("send" in channel)) return false;
-  const round = rounds[config.nextGameIndex % rounds.length]!;
+  const fallbackRound = rounds[config.nextGameIndex % rounds.length]!;
+  const round = await generateAutoGameRound(fallbackRound.game, fallbackRound);
   const sessionId = randomBytes(5).toString("hex");
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(round.choices.map((choice, index) =>
     new ButtonBuilder().setCustomId(`autogame:${sessionId}:${index}`).setLabel(`${index + 1}. ${choice}`).setStyle(ButtonStyle.Secondary)
