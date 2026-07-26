@@ -4,6 +4,7 @@ import { prisma } from "../database.js";
 import { logger } from "../logger.js";
 import { renderMagicTemplate } from "./magic.js";
 import { generateDynamicScheduledContent } from "./ai.js";
+import { discordAsset } from "./assets.js";
 
 const dailyRotations: Record<string, readonly string[]> = {
   "{{daily_morning}}": [
@@ -62,7 +63,11 @@ export async function startScheduler(client: Client) {
       try {
         const fallback = renderRotatingContent(post.content, nextVariant);
         const content = await generateDynamicScheduledContent(post.content, fallback);
-        await channel.send(content);
+        const magicPost = /\{\{(?:daily_tarot|herb_lore|moon_phase)\}\}/.test(post.content);
+        await channel.send({
+          content,
+          files: magicPost ? discordAsset("magic-banner.png") : []
+        });
         post.lastVariantIndex = nextVariant;
         await prisma.scheduledPost.update({
           where: { id: post.id },

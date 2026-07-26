@@ -1,4 +1,6 @@
-import { EmbedBuilder, Events, type Client, type Message } from "discord.js";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { AttachmentBuilder, EmbedBuilder, Events, type Client, type Message } from "discord.js";
 import { commandMap, commands } from "../commands/index.js";
 import { env } from "../config.js";
 import { ensureGuild, prisma } from "../database.js";
@@ -131,7 +133,34 @@ export function registerEvents(client: Client) {
     if (c.autoRoleId) await member.roles.add(c.autoRoleId, "Nymera autorole").catch(() => undefined);
     if (c.welcomeChannelId) {
       const channel = await member.guild.channels.fetch(c.welcomeChannelId).catch(() => null);
-      if (channel && "send" in channel) await channel.send(`Welcome to **${member.guild.name}**, ${member}. The mist has made room for you.`);
+      if (channel && "send" in channel) {
+        const bannerPath = resolve(process.cwd(), "assets", "welcome-banner.png");
+        const embed = new EmbedBuilder()
+          .setColor(0x7f2cc4)
+          .setTitle(`Welcome to ${member.guild.name}`)
+          .setDescription(
+            `${member}, you've entered a realm of **magic, mystery, and mayhem**.\n\n` +
+            "Be respectful. Stay curious. Embrace the darkness.\n" +
+            "Chat, participate, explore the lore, earn Spellmarks, and follow the rules.\n\n" +
+            "✨ **Your story starts here.**"
+          )
+          .setThumbnail(member.user.displayAvatarURL())
+          .setFooter({ text: `Member #${member.guild.memberCount} • The haze welcomes you.` })
+          .setTimestamp();
+        const files: AttachmentBuilder[] = [];
+        if (existsSync(bannerPath)) {
+          files.push(new AttachmentBuilder(bannerPath, { name: "welcome-banner.png" }));
+          embed.setImage("attachment://welcome-banner.png");
+        } else {
+          logger.warn({ bannerPath }, "Welcome banner asset was not found");
+        }
+        await channel.send({
+          content: `Welcome, ${member}!`,
+          embeds: [embed],
+          files,
+          allowedMentions: { users: [member.id] }
+        });
+      }
     }
     await sendGuildLog(member.guild, "Member joined", `${member.user.tag} (${member.id})`);
   });
