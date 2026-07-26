@@ -1,5 +1,6 @@
 import { Events, type Client } from "discord.js";
-import { commandMap } from "../commands/index.js";
+import { commandMap, commands } from "../commands/index.js";
+import { env } from "../config.js";
 import { ensureGuild, prisma } from "../database.js";
 import { logger } from "../logger.js";
 import { askNymera } from "../services/ai.js";
@@ -16,6 +17,20 @@ const xpCooldowns = new Map<string, number>();
 export function registerEvents(client: Client) {
   client.once(Events.ClientReady, async ready => {
     logger.info({ user: ready.user.tag, guilds: ready.guilds.cache.size }, "Nymera is ready");
+    void (async () => {
+      const definitions = commands.map(command => command.data.toJSON());
+      if (env.DISCORD_GUILD_ID) {
+        const guild = ready.guilds.cache.get(env.DISCORD_GUILD_ID);
+        if (!guild) throw new Error(`Configured guild ${env.DISCORD_GUILD_ID} is not available to Nymera`);
+        await guild.commands.set(definitions);
+      } else {
+        await ready.application.commands.set(definitions);
+      }
+      logger.info({
+        scope: env.DISCORD_GUILD_ID ? "guild" : "global",
+        commands: definitions.length
+      }, "Slash commands synchronized");
+    })().catch(error => logger.error({ err: error }, "Slash command synchronization failed"));
     await startScheduler(client);
     startGiveawayMonitor(client);
     startAutoGameMonitor(client);

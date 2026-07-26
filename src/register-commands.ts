@@ -12,6 +12,6 @@ try {
   await rest.put(route, { body: commands.map(command => command.data.toJSON()) });
   logger.info({ scope: env.DISCORD_GUILD_ID ? "guild" : "global", commands: commands.length }, "Slash commands registered");
 } catch (error) {
-  logger.fatal({ error }, "Command registration failed");
+  logger.fatal({ err: error }, "Command registration failed");
   process.exitCode = 1;
 }
