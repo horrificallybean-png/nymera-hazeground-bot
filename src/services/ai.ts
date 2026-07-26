@@ -34,7 +34,8 @@ const gameRoundSchema = z.object({
 
 export async function generateAutoGameRound(
   topic: string,
-  fallback: { title: string; question: string; choices: readonly string[]; answer: number }
+  fallback: { title: string; question: string; choices: readonly string[]; answer: number },
+  recentQuestions: readonly string[] = []
 ) {
   if (!client) return fallback;
   try {
@@ -44,10 +45,18 @@ export async function generateAutoGameRound(
 Create one fresh, family-friendly Discord multiple-choice trivia or word game.
 The answer must be unambiguous and factually reliable. Do not give medical advice.
 Return only JSON with: title, question, choices (exactly four strings), answer (zero-based index).`,
-      input: `Topic: ${topic}. Avoid this previous question: ${fallback.question}`,
+      input: `Topic: ${topic}.
+Do not repeat or closely paraphrase any of these recent questions:
+${recentQuestions.slice(0, 20).map(question => `- ${question}`).join("\n") || "- None"}
+Create a genuinely different question with a different answer concept.`,
       max_output_tokens: 350
     });
-    return gameRoundSchema.parse(parseJsonObject(response.output_text));
+    const generated = gameRoundSchema.parse(parseJsonObject(response.output_text));
+    const normalized = generated.question.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
+    const repeated = recentQuestions.some(question =>
+      question.toLowerCase().replaceAll(/[^a-z0-9]/g, "") === normalized
+    );
+    return repeated ? fallback : generated;
   } catch {
     return fallback;
   }

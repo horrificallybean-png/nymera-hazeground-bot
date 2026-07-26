@@ -67,7 +67,17 @@ export const triviaQuestions = [
   { q: "In Dead by Daylight, how many survivors normally enter a standard trial?", choices: ["Three", "Four", "Five", "Six"], answer: 1 },
   { q: "Which herb is traditionally associated with remembrance?", choices: ["Rosemary", "Basil", "Mint", "Thyme"], answer: 0 },
   { q: "What is the phase after a new moon called?", choices: ["Waning gibbous", "Waxing crescent", "Full moon", "Third quarter"], answer: 1 },
-  { q: "Who wrote the gothic novel Frankenstein?", choices: ["Bram Stoker", "Mary Shelley", "Shirley Jackson", "Edgar Allan Poe"], answer: 1 }
+  { q: "Who wrote the gothic novel Frankenstein?", choices: ["Bram Stoker", "Mary Shelley", "Shirley Jackson", "Edgar Allan Poe"], answer: 1 },
+  { q: "Which tarot card is commonly numbered XIII?", choices: ["Death", "The Hermit", "Justice", "The Sun"], answer: 0 },
+  { q: "Who wrote The Haunting of Hill House?", choices: ["Shirley Jackson", "Anne Rice", "Mary Shelley", "Susan Hill"], answer: 0 },
+  { q: "Which Survivor item is primarily used for faster generator repairs?", choices: ["Map", "Key", "Toolbox", "Med-Kit"], answer: 2 },
+  { q: "Which moon phase appears fully illuminated from Earth?", choices: ["New moon", "Full moon", "First quarter", "Waning crescent"], answer: 1 },
+  { q: "Which culinary herb has needle-like leaves and is often used with roasted potatoes?", choices: ["Rosemary", "Cilantro", "Dill", "Chives"], answer: 0 },
+  { q: "Who wrote the novel Dracula?", choices: ["Oscar Wilde", "Bram Stoker", "Henry James", "H. G. Wells"], answer: 1 },
+  { q: "In Dead by Daylight, how many generators normally power the exit gates?", choices: ["Three", "Four", "Five", "Six"], answer: 2 },
+  { q: "What does waxing mean for the Moon?", choices: ["Its illumination is increasing", "Its illumination is decreasing", "It is eclipsed", "It is below the horizon"], answer: 0 },
+  { q: "Which Major Arcana card is associated with hope and renewal?", choices: ["The Tower", "The Devil", "The Star", "The Emperor"], answer: 2 },
+  { q: "What alternate escape may appear in a Dead by Daylight trial?", choices: ["A mirror", "The Hatch", "A portal", "A ladder"], answer: 1 }
 ] as const;
 
 export const hangmanWords = ["grimoire", "specter", "moonlight", "familiar", "cauldron", "nightmare"];

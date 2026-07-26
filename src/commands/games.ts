@@ -69,7 +69,16 @@ export const gameCommands: Command[] = [
   {
     data: new SlashCommandBuilder().setName("horror-trivia").setDescription("Answer a random trivia question"),
     async execute(i) {
-      const q = triviaQuestions[secureInt(0, triviaQuestions.length - 1)]!;
+      const recent = await prisma.gameResult.findMany({
+        where: { guildId: i.guildId!, userId: i.user.id, game: "trivia" },
+        orderBy: { createdAt: "desc" },
+        take: Math.min(10, triviaQuestions.length - 1),
+        select: { detail: true }
+      });
+      const seen = new Set(recent.map(result => result.detail));
+      const available = triviaQuestions.filter(question => !seen.has(question.q));
+      const pool = available.length ? available : triviaQuestions;
+      const q = pool[secureInt(0, pool.length - 1)]!;
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(q.choices.map((choice, index) =>
         new ButtonBuilder().setCustomId(`trivia:${index}`).setLabel(`${index + 1}. ${choice}`).setStyle(ButtonStyle.Secondary)
       ));

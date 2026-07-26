@@ -472,3 +472,13 @@ model AutoGameConfig {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+model AutoGameHistory {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  game      String
+  question  String
+  createdAt DateTime @default(now())
+
+  @@index([guildId, createdAt])
+}
