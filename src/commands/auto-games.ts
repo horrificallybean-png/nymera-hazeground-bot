@@ -6,7 +6,7 @@ import { prisma } from "../database.js";
 import { launchAutoGame } from "../services/auto-games.js";
 
 export const autoGameCommands: Command[] = [{
-  data: new SlashCommandBuilder().setName("auto-games").setDescription("Configure rotating automatic games")
+  data: new SlashCommandBuilder().setName("auto-games").setDescription("Configure Nymera's rotating activity host")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand(s => s.setName("setup").setDescription("Enable automatic games")
       .addChannelOption(o => o.setName("channel").setDescription("Game channel").setRequired(true).addChannelTypes(ChannelType.GuildText))
@@ -43,14 +43,14 @@ export const autoGameCommands: Command[] = [{
         }
       });
       await i.reply({
-        content: `Automatic games enabled in ${channel} every ${minutes} minutes. Each round stays open for ${answerMinutes} minute${answerMinutes === 1 ? "" : "s"}${pingRole ? ` and pings ${pingRole}` : ""}. Use \`/auto-games start-now\` to test now.`,
+        content: `Nymera's automatic activity host is enabled in ${channel} every ${minutes} minutes. Activities include trivia, quizzes, polls, word games, encounters, treasure hunts, counting, reaction races, and flash giveaways. Each activity stays open for ${answerMinutes} minute${answerMinutes === 1 ? "" : "s"}${pingRole ? ` and pings ${pingRole}` : ""}. Use \`/auto-games start-now\` to test now.`,
         ephemeral: true
       });
       return;
     }
     if (sub === "disable") {
       await prisma.autoGameConfig.updateMany({ where: { guildId: i.guildId! }, data: { enabled: false } });
-      await i.reply({ content: "Automatic games disabled.", ephemeral: true });
+      await i.reply({ content: "Nymera's automatic activity host is disabled.", ephemeral: true });
       return;
     }
     const config = await prisma.autoGameConfig.findUnique({ where: { guildId: i.guildId! } });

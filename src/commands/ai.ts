@@ -29,8 +29,12 @@ export const aiCommands: Command[] = [{
       { name: "Dead by Daylight", value: "dbd" },
       { name: "Community Guide", value: "guide" }
     ))
-    .addBooleanOption(o => o.setName("auto_replies").setDescription("Occasionally answer unmentioned questions"))
-    .addIntegerOption(o => o.setName("reply_chance").setDescription("Percent chance for eligible questions").setMinValue(1).setMaxValue(100))
+    .addBooleanOption(o => o.setName("auto_replies").setDescription("Let Nymera occasionally join conversation"))
+    .addChannelOption(o => o.setName("conversation_channel").setDescription("Channel where Nymera may join ordinary conversation").addChannelTypes(ChannelType.GuildText))
+    .addIntegerOption(o => o.setName("reply_chance").setDescription("Percent chance to join an eligible message").setMinValue(1).setMaxValue(100))
+    .addIntegerOption(o => o.setName("cooldown_minutes").setDescription("Minimum minutes between automatic replies").setMinValue(1).setMaxValue(60))
+    .addBooleanOption(o => o.setName("start_conversations").setDescription("Let Nymera post new conversation starters"))
+    .addIntegerOption(o => o.setName("starter_minutes").setDescription("Minutes between conversation starters").setMinValue(30).setMaxValue(1440))
     .addBooleanOption(o => o.setName("ai_moderation").setDescription("Send AI suggestions to a staff review channel"))
     .addChannelOption(o => o.setName("review_channel").setDescription("Private staff channel for AI suggestions").addChannelTypes(ChannelType.GuildText)),
   async execute(i) {
@@ -38,6 +42,10 @@ export const aiCommands: Command[] = [{
     const mode = i.options.getString("mode") ?? current.aiMode;
     const autoReplies = i.options.getBoolean("auto_replies") ?? current.aiAutoReplyEnabled;
     const chance = i.options.getInteger("reply_chance") ?? current.aiAutoReplyChance;
+    const conversationChannel = i.options.getChannel("conversation_channel");
+    const cooldownMinutes = i.options.getInteger("cooldown_minutes") ?? current.aiAutoReplyCooldownMinutes;
+    const startConversations = i.options.getBoolean("start_conversations") ?? current.aiConversationStarterEnabled;
+    const starterMinutes = i.options.getInteger("starter_minutes") ?? current.aiConversationStarterMinutes;
     const aiModeration = i.options.getBoolean("ai_moderation") ?? current.aiModerationEnabled;
     const reviewChannel = i.options.getChannel("review_channel");
     const updated = await prisma.guildConfig.update({
@@ -46,13 +54,22 @@ export const aiCommands: Command[] = [{
         aiMode: mode,
         aiAutoReplyEnabled: autoReplies,
         aiAutoReplyChance: chance,
+        aiConversationChannelId: conversationChannel?.id ?? current.aiConversationChannelId,
+        aiAutoReplyCooldownMinutes: cooldownMinutes,
+        aiConversationStarterEnabled: startConversations,
+        aiConversationStarterMinutes: starterMinutes,
         aiModerationEnabled: aiModeration,
         aiReviewChannelId: reviewChannel?.id ?? current.aiReviewChannelId
       }
     });
     await i.reply({ embeds: [new EmbedBuilder().setColor(0x6f42c1).setTitle("Nymera AI Settings").addFields(
       { name: "Mode", value: updated.aiMode, inline: true },
-      { name: "Automatic replies", value: updated.aiAutoReplyEnabled ? `${updated.aiAutoReplyChance}% of eligible questions` : "Off", inline: true },
+      { name: "Conversation engagement", value: updated.aiAutoReplyEnabled
+        ? `${updated.aiAutoReplyChance}% chance in ${updated.aiConversationChannelId ? `<#${updated.aiConversationChannelId}>` : "question channels"} • ${updated.aiAutoReplyCooldownMinutes}m cooldown`
+        : "Off", inline: true },
+      { name: "Conversation starters", value: updated.aiConversationStarterEnabled
+        ? `Every ${updated.aiConversationStarterMinutes} minutes in ${updated.aiConversationChannelId ? `<#${updated.aiConversationChannelId}>` : "channel not set"}`
+        : "Off", inline: true },
       { name: "AI moderation", value: updated.aiModerationEnabled ? `Suggestions → ${updated.aiReviewChannelId ? `<#${updated.aiReviewChannelId}>` : "review channel not set"}` : "Off" }
     )], ephemeral: true });
   }

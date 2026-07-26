@@ -13,6 +13,7 @@ import { startGiveawayMonitor } from "../services/community.js";
 import { startAutoGameMonitor } from "../services/auto-games.js";
 import { startReminderMonitor } from "../services/reminders.js";
 import { startBackupMonitor } from "../services/backups.js";
+import { startConversationStarterMonitor } from "../services/conversation-starters.js";
 
 const xpCooldowns = new Map<string, number>();
 const autoReplyCooldowns = new Map<string, number>();
@@ -73,6 +74,7 @@ export function registerEvents(client: Client) {
     startAutoGameMonitor(client);
     startReminderMonitor(client);
     startBackupMonitor();
+    startConversationStarterMonitor(client);
     for (const guild of ready.guilds.cache.values()) await seedGuildEconomy(guild.id);
   });
 
@@ -247,19 +249,29 @@ export function registerEvents(client: Client) {
         void sendAiModerationReview(message, "AI review heuristic");
       }
       const mentioned = message.mentions.has(client.user);
+      const conversationChannel = c.aiConversationChannelId === message.channel.id;
+      const eligibleConversation = conversationChannel
+        ? message.content.trim().length >= 5 && !message.content.trim().startsWith("/")
+        : message.content.trim().endsWith("?");
       const eligibleAutoReply = !mentioned &&
         c.aiEnabled &&
         c.aiAutoReplyEnabled &&
-        message.content.trim().endsWith("?") &&
+        eligibleConversation &&
         Math.random() * 100 < c.aiAutoReplyChance &&
-        Date.now() - (autoReplyCooldowns.get(message.channel.id) ?? 0) >= 5 * 60_000;
+        Date.now() - (autoReplyCooldowns.get(message.channel.id) ?? 0) >= c.aiAutoReplyCooldownMinutes * 60_000;
       if (!mentioned && !eligibleAutoReply) return;
       if (!c.aiEnabled) return;
       if (eligibleAutoReply) autoReplyCooldowns.set(message.channel.id, Date.now());
       const prompt = message.content.replace(new RegExp(`<@!?${client.user.id}>`, "g"), "").trim();
       if (!prompt) return void await message.reply("You called through the mist?");
       await message.channel.sendTyping();
-      const answer = await askNymera({ guildId: message.guild.id, channelId: message.channel.id, userId: message.author.id, prompt });
+      const answer = await askNymera({
+        guildId: message.guild.id,
+        channelId: message.channel.id,
+        userId: message.author.id,
+        prompt,
+        conversation: eligibleAutoReply && conversationChannel
+      });
       await message.reply(trimDiscord(answer));
     } catch (error) {
       logger.error({ error, guildId: message.guildId }, "Message handler failed");

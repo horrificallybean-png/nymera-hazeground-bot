@@ -18,6 +18,12 @@ model GuildConfig {
   aiMode             String   @default("mystic")
   aiAutoReplyEnabled Boolean  @default(false)
   aiAutoReplyChance  Int      @default(10)
+  aiConversationChannelId String?
+  aiAutoReplyCooldownMinutes Int @default(3)
+  aiConversationStarterEnabled Boolean @default(false)
+  aiConversationStarterMinutes Int @default(180)
+  aiConversationStarterLastAt DateTime?
+  aiConversationStarterLastText String @default("")
   aiModerationEnabled Boolean @default(false)
   aiReviewChannelId  String?
   automodEnabled     Boolean  @default(true)
