@@ -62,7 +62,7 @@ export const autoGameCommands: Command[] = [{
     }
     if (!config?.enabled) return void await i.reply({ content: "Configure automatic games first with `/auto-games setup`.", ephemeral: true });
     await i.deferReply({ ephemeral: true });
-    const launched = await launchAutoGame(i.client, i.guildId!);
-    await i.editReply(launched ? "The next automatic game has started." : "I could not post in the configured channel. Check my channel permissions.");
+    const result = await launchAutoGame(i.client, i.guildId!);
+    await i.editReply(result.ok ? "The next automatic activity has started." : result.reason ?? "The automatic activity could not start.");
   }
 }];

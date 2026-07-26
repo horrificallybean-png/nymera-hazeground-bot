@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType,
+  PermissionFlagsBits,
   type Client, type Message, type TextChannel
 } from "discord.js";
 import { prisma } from "../database.js";
@@ -39,6 +40,11 @@ type SimpleActivity = {
 type Activity = ChoiceActivity | TextActivity | PollActivity | SimpleActivity;
 
 const activeGuilds = new Set<string>();
+
+export type AutoGameLaunchResult = {
+  ok: boolean;
+  reason?: string;
+};
 
 const activities: readonly Activity[] = [
   { type: "choice", game: "auto_horror", title: "💀 Horror Trivia", question: "Who wrote Frankenstein?", choices: ["Mary Shelley", "Bram Stoker", "Edgar Allan Poe", "Shirley Jackson"], answer: 0 },
@@ -312,13 +318,35 @@ async function hostWordChain(channel: TextChannel, activity: SimpleActivity, gui
   });
 }
 
-export async function launchAutoGame(client: Client, guildId: string) {
-  if (activeGuilds.has(guildId)) return false;
+export async function launchAutoGame(client: Client, guildId: string): Promise<AutoGameLaunchResult> {
+  if (activeGuilds.has(guildId)) {
+    return { ok: false, reason: "An automatic activity is already running. Wait for its answer timer to finish." };
+  }
   const config = await prisma.autoGameConfig.findUnique({ where: { guildId } });
-  if (!config?.enabled) return false;
+  if (!config?.enabled) {
+    return { ok: false, reason: "Automatic activities are not enabled. Run `/auto-games setup` first." };
+  }
   const fetched = await client.channels.fetch(config.channelId).catch(() => null);
-  if (!fetched || !fetched.isTextBased() || !("send" in fetched) || !("createMessageCollector" in fetched)) return false;
+  if (!fetched) {
+    return { ok: false, reason: `The configured channel <#${config.channelId}> no longer exists or Nymera cannot view it. Run \`/auto-games setup\` again.` };
+  }
+  if (!fetched.isTextBased() || !("send" in fetched) || !("createMessageCollector" in fetched)) {
+    return { ok: false, reason: "The configured destination is not a standard text channel. Run `/auto-games setup` and choose a server text channel." };
+  }
   const channel = fetched as TextChannel;
+  const permissions = client.user ? channel.permissionsFor(client.user) : null;
+  const requiredPermissions = [
+    { flag: PermissionFlagsBits.ViewChannel, name: "View Channel" },
+    { flag: PermissionFlagsBits.SendMessages, name: "Send Messages" },
+    { flag: PermissionFlagsBits.ReadMessageHistory, name: "Read Message History" }
+  ];
+  const missing = requiredPermissions.filter(permission => !permissions?.has(permission.flag)).map(permission => permission.name);
+  if (missing.length) {
+    return {
+      ok: false,
+      reason: `Nymera is missing these permissions in ${channel}: **${missing.join(", ")}**. Open the channel settings and allow them for Nymera's bot role.`
+    };
+  }
   const activity = activities[config.nextGameIndex % activities.length]!;
   activeGuilds.add(guildId);
   try {
@@ -349,11 +377,12 @@ export async function launchAutoGame(client: Client, guildId: string) {
     });
     if (oldHistory.length) await prisma.autoGameHistory.deleteMany({ where: { id: { in: oldHistory.map(entry => entry.id) } } });
     setTimeout(() => activeGuilds.delete(guildId), config.answerSeconds * 1000 + 1_000).unref();
-    return true;
+    return { ok: true };
   } catch (error) {
     activeGuilds.delete(guildId);
     logger.error({ error, guildId, activity: activity.game }, "Automatic activity failed");
-    return false;
+    const detail = error instanceof Error ? error.message : String(error);
+    return { ok: false, reason: `Discord rejected the activity post: \`${detail.slice(0, 500)}\`` };
   }
 }
 
