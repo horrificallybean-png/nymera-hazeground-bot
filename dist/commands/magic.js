@@ -5,6 +5,23 @@ import { herbs, spells, tarotCards } from "../data-magic.js";
 import { deterministicDraw, moonPhase, symbolicPlanetaryHour } from "../services/magic.js";
 const findByKeyOrName = (items, query) => items.find(x => x.key === query.toLowerCase().replaceAll(" ", "_")) ??
     items.find(x => x.name.toLowerCase().includes(query.toLowerCase()));
+const sixDailyMagicPosts = [
+    { hour: 6, token: "{{magic_six_daily_dawn}}" },
+    { hour: 9, token: "{{magic_six_daily_morning}}" },
+    { hour: 12, token: "{{magic_six_daily_midday}}" },
+    { hour: 15, token: "{{magic_six_daily_afternoon}}" },
+    { hour: 18, token: "{{magic_six_daily_evening}}" },
+    { hour: 21, token: "{{magic_six_daily_night}}" }
+];
+function validTimezone(timezone) {
+    try {
+        new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
 export const magicCommands = [
     {
         data: new SlashCommandBuilder().setName("tarot").setDescription("Draw a reflective tarot card")
@@ -127,6 +144,40 @@ export const magicCommands = [
                     timezone: i.options.getString("timezone") ?? "America/Denver"
                 } });
             await i.reply({ content: "Magic post scheduled. Restart Nymera to load the new schedule.", ephemeral: true });
+        }
+    },
+    {
+        data: new SlashCommandBuilder().setName("magic-six-daily").setDescription("Schedule six different AI magic posts every day")
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+            .addChannelOption(o => o.setName("channel").setDescription("Where all six magic posts appear").setRequired(true).addChannelTypes(ChannelType.GuildText))
+            .addRoleOption(o => o.setName("ping_role").setDescription("Optional role to notify with every magic post"))
+            .addStringOption(o => o.setName("timezone").setDescription("IANA timezone (default: America/Denver)")),
+        async execute(i) {
+            const timezone = i.options.getString("timezone") ?? "America/Denver";
+            if (!validTimezone(timezone)) {
+                return void await i.reply({ content: "That timezone is invalid. Try `America/Denver`.", ephemeral: true });
+            }
+            const channel = i.options.getChannel("channel", true);
+            const role = i.options.getRole("ping_role");
+            const prefix = role ? `<@&${role.id}>\n` : "";
+            await prisma.$transaction([
+                prisma.scheduledPost.deleteMany({
+                    where: { guildId: i.guildId, content: { contains: "{{magic_six_daily_" } }
+                }),
+                ...sixDailyMagicPosts.map(post => prisma.scheduledPost.create({
+                    data: {
+                        guildId: i.guildId,
+                        channelId: channel.id,
+                        content: `${prefix}${post.token}`,
+                        cron: `0 ${post.hour} * * *`,
+                        timezone
+                    }
+                }))
+            ]);
+            await i.reply({
+                content: `Six daily AI magic posts are scheduled in ${channel} at **6 AM, 9 AM, 12 PM, 3 PM, 6 PM, and 9 PM** (${timezone}). Restart or redeploy Nymera once to activate them.`,
+                ephemeral: true
+            });
         }
     }
 ];

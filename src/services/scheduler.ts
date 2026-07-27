@@ -73,7 +73,7 @@ export async function startScheduler(client: Client) {
           fallback,
           history.map(entry => entry.content)
         );
-        const magicPost = /\{\{(?:daily_tarot|herb_lore|moon_phase)\}\}/.test(post.content);
+        const magicPost = /\{\{(?:daily_tarot|herb_lore|moon_phase|magic_six_daily_)\S*\}\}/.test(post.content);
         await channel.send({
           content,
           ...(magicPost ? discordArtwork("magic-banner.png") : { files: [], embeds: [] })

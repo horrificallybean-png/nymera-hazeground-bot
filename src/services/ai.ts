@@ -61,6 +61,16 @@ function isTooSimilar(candidate: string, recent: readonly string[]) {
   });
 }
 
+function incompleteResponseReason(response: {
+  status?: string;
+  incomplete_details?: { reason?: string } | null;
+}) {
+  const detail = response.incomplete_details?.reason;
+  return detail
+    ? `AI response was ${response.status ?? "incomplete"} (${detail})`
+    : `AI response was ${response.status ?? "incomplete"} before completing the game`;
+}
+
 export async function generateAutoGameRound(
   topic: string,
   fallback: { title: string; question: string; choices: readonly string[]; answer: number },
@@ -82,11 +92,15 @@ Return only JSON with: title, question, choices (exactly four strings), answer (
 Do not repeat or closely paraphrase any of these recent questions:
 ${recentQuestions.slice(0, 20).map(question => `- ${question}`).join("\n") || "- None"}
 Create a genuinely different question with a different answer concept. Variety attempt: ${attempt + 1}.`,
-        max_output_tokens: 800,
+        reasoning: { effort: "low" },
+        max_output_tokens: 2_000,
         text: { format: zodTextFormat(gameRoundSchema, "game_round") }
       });
       const generated = response.output_parsed;
-      if (!generated) throw new Error("AI did not return a completed game");
+      if (!generated) {
+        if (attempt === 0) continue;
+        throw new Error(incompleteResponseReason(response));
+      }
       if (isTooSimilar(generated.question, recentQuestions)) continue;
       autoGameAiStatus = { result: "success", attemptedAt: new Date() };
       return generated;
@@ -148,11 +162,15 @@ ${input.recentQuestions?.slice(0, 20).map(question => `- ${question}`).join("\n"
 Fallback structure:
 ${JSON.stringify(input.fallback)}
 Variety attempt: ${attempt + 1}.`,
-        max_output_tokens: 900,
+        reasoning: { effort: "low" },
+        max_output_tokens: 2_000,
         text: { format: zodTextFormat(activityContentSchema, "automatic_activity") }
       });
       const generated = response.output_parsed;
-      if (!generated) throw new Error("AI did not return a completed activity");
+      if (!generated) {
+        if (attempt === 0) continue;
+        throw new Error(incompleteResponseReason(response));
+      }
       if (input.type === "text" && !generated.answers?.length) throw new Error("AI text activity omitted answers");
       if (input.type === "poll" && !generated.choices?.length) throw new Error("AI poll omitted choices");
       if (input.type === "wordchain" && !generated.startWord) throw new Error("AI word chain omitted startWord");
@@ -172,11 +190,19 @@ Variety attempt: ${attempt + 1}.`,
 }
 
 export async function generateDynamicScheduledContent(template: string, fallback: string, recentContent: readonly string[] = []) {
-  if (!client || !/\{\{(?:daily_|daily_tarot|herb_lore|moon_phase)/.test(template)) return fallback;
+  if (!client || !/\{\{(?:daily_|daily_tarot|herb_lore|moon_phase|magic_six_daily_)/.test(template)) return fallback;
   const kind = template.match(/\{\{([^}]+)\}\}/)?.[1] ?? "community";
+  const sixDailyRules: Record<string, string> = {
+    magic_six_daily_dawn: "Create a fresh tarot, oracle, symbol, or archetype reflection. Vary the system and subject each day.",
+    magic_six_daily_morning: "Create educational herb or plant folklore. Include a brief safety note and never make medical claims.",
+    magic_six_daily_midday: "Teach a concise, accurately framed folklore, mythology, historic magic, or legendary-creature fact from a varied culture.",
+    magic_six_daily_afternoon: "Explore the history or symbolism of a crystal, color, candle, charm, protective motif, or magical object. Rotate subjects.",
+    magic_six_daily_evening: "Share astronomy, moon, constellation, seasonal-sky, or historical astrology lore, clearly separating science from symbolism.",
+    magic_six_daily_night: "Offer a harmless reflective grimoire practice, journal prompt, creative ritual, visualization, or mindful observation using ordinary items."
+  };
   const formatRule = kind === "herb_lore"
     ? "Write a declarative educational lore post. Do not ask the reader any question and do not include a reflection prompt."
-    : "";
+    : sixDailyRules[kind] ?? "";
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await client.responses.create({
@@ -198,7 +224,8 @@ ${fallback}
 Recent posts that must not be repeated or closely paraphrased:
 ${recentContent.slice(0, 12).map(content => `- ${content}`).join("\n") || "- None"}
 Variety attempt: ${attempt + 1}.`,
-        max_output_tokens: 500
+        reasoning: { effort: "low" },
+        max_output_tokens: 1_200
       });
       const output = response.output_text.trim();
       if (!output || isTooSimilar(output, recentContent)) continue;
@@ -318,7 +345,8 @@ Do not make identity inferences. Consider context missing. Never order punishmen
 Return only JSON: risk (low, medium, high), category, reason, recommendation.
 The recommendation must ask staff to review context and may suggest ignore, contact, delete, warn, or urgent escalation.`,
       input: `Heuristic trigger: ${trigger}\nMessage:\n${content.slice(0, 1500)}`,
-      max_output_tokens: 600,
+      reasoning: { effort: "low" },
+      max_output_tokens: 1_500,
       text: { format: zodTextFormat(moderationSchema, "moderation_assessment") }
     });
     return response.output_parsed;
