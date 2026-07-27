@@ -74,6 +74,16 @@ model AiMemory {
   @@index([guildId, channelId, createdAt])
 }
 
+model GeneratedContentHistory {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  kind      String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([guildId, kind, createdAt])
+}
+
 model AiUserMemory {
   guildId  String
   userId   String

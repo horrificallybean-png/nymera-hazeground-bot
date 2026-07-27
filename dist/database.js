@@ -1,0 +1,9 @@
+import { PrismaClient } from "@prisma/client";
+export const prisma = new PrismaClient();
+export async function ensureGuild(guildId) {
+    return prisma.guildConfig.upsert({
+        where: { guildId },
+        update: {},
+        create: { guildId }
+    });
+}

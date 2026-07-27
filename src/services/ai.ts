@@ -44,6 +44,23 @@ const activityContentSchema = z.object({
 
 export type DynamicActivityContent = z.infer<typeof activityContentSchema>;
 
+function contentWords(value: string) {
+  return new Set(value.toLowerCase().replaceAll(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(word => word.length > 2));
+}
+
+function isTooSimilar(candidate: string, recent: readonly string[]) {
+  const normalized = candidate.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
+  const candidateWords = contentWords(candidate);
+  return recent.some(previous => {
+    const previousNormalized = previous.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
+    if (normalized === previousNormalized) return true;
+    const previousWords = contentWords(previous);
+    const shared = [...candidateWords].filter(word => previousWords.has(word)).length;
+    const union = new Set([...candidateWords, ...previousWords]).size;
+    return union > 0 && shared / union >= 0.62;
+  });
+}
+
 export async function generateAutoGameRound(
   topic: string,
   fallback: { title: string; question: string; choices: readonly string[]; answer: number },
@@ -54,27 +71,27 @@ export async function generateAutoGameRound(
     return fallback;
   }
   try {
-    const response = await client.responses.parse({
-      model: env.OPENAI_MODEL,
-      instructions: `${personality}
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await client.responses.parse({
+        model: env.OPENAI_MODEL,
+        instructions: `${personality}
 Create one fresh, family-friendly Discord multiple-choice trivia or word game.
 The answer must be unambiguous and factually reliable. Do not give medical advice.
 Return only JSON with: title, question, choices (exactly four strings), answer (zero-based index).`,
-      input: `Topic: ${topic}.
+        input: `Topic: ${topic}.
 Do not repeat or closely paraphrase any of these recent questions:
 ${recentQuestions.slice(0, 20).map(question => `- ${question}`).join("\n") || "- None"}
-Create a genuinely different question with a different answer concept.`,
-      max_output_tokens: 800,
-      text: { format: zodTextFormat(gameRoundSchema, "game_round") }
-    });
-    const generated = response.output_parsed;
-    if (!generated) throw new Error("AI did not return a completed game");
-    const normalized = generated.question.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
-    const repeated = recentQuestions.some(question =>
-      question.toLowerCase().replaceAll(/[^a-z0-9]/g, "") === normalized
-    );
-    autoGameAiStatus = { result: "success", attemptedAt: new Date() };
-    return repeated ? fallback : generated;
+Create a genuinely different question with a different answer concept. Variety attempt: ${attempt + 1}.`,
+        max_output_tokens: 800,
+        text: { format: zodTextFormat(gameRoundSchema, "game_round") }
+      });
+      const generated = response.output_parsed;
+      if (!generated) throw new Error("AI did not return a completed game");
+      if (isTooSimilar(generated.question, recentQuestions)) continue;
+      autoGameAiStatus = { result: "success", attemptedAt: new Date() };
+      return generated;
+    }
+    throw new Error("AI repeated a recent game twice");
   } catch (error) {
     autoGameAiStatus = {
       result: "failed",
@@ -116,29 +133,34 @@ export async function generateAutoActivityContent(input: {
     wordchain: "Create a word-chain or Last Letter round. Include one ordinary English `startWord` of 2-20 letters and explain that each word begins with the previous word's last letter."
   };
   try {
-    const response = await client.responses.parse({
-      model: env.OPENAI_MODEL,
-      instructions: `${personality}
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await client.responses.parse({
+        model: env.OPENAI_MODEL,
+        instructions: `${personality}
 Create one fresh, family-friendly Discord automatic activity.
 ${typeRules[input.type]}
 Keep the same activity type and make all rules reliable and easy to understand.
 Return only JSON with title, question, and only the applicable optional fields: choices, answers, startWord.`,
-      input: `Activity key: ${input.game}
+        input: `Activity key: ${input.game}
 Type: ${input.type}
 Recent prompts to avoid:
 ${input.recentQuestions?.slice(0, 20).map(question => `- ${question}`).join("\n") || "- None"}
 Fallback structure:
-${JSON.stringify(input.fallback)}`,
-      max_output_tokens: 900,
-      text: { format: zodTextFormat(activityContentSchema, "automatic_activity") }
-    });
-    const generated = response.output_parsed;
-    if (!generated) throw new Error("AI did not return a completed activity");
-    if (input.type === "text" && !generated.answers?.length) throw new Error("AI text activity omitted answers");
-    if (input.type === "poll" && !generated.choices?.length) throw new Error("AI poll omitted choices");
-    if (input.type === "wordchain" && !generated.startWord) throw new Error("AI word chain omitted startWord");
-    autoGameAiStatus = { result: "success", attemptedAt: new Date() };
-    return generated;
+${JSON.stringify(input.fallback)}
+Variety attempt: ${attempt + 1}.`,
+        max_output_tokens: 900,
+        text: { format: zodTextFormat(activityContentSchema, "automatic_activity") }
+      });
+      const generated = response.output_parsed;
+      if (!generated) throw new Error("AI did not return a completed activity");
+      if (input.type === "text" && !generated.answers?.length) throw new Error("AI text activity omitted answers");
+      if (input.type === "poll" && !generated.choices?.length) throw new Error("AI poll omitted choices");
+      if (input.type === "wordchain" && !generated.startWord) throw new Error("AI word chain omitted startWord");
+      if (isTooSimilar(generated.question, input.recentQuestions ?? [])) continue;
+      autoGameAiStatus = { result: "success", attemptedAt: new Date() };
+      return generated;
+    }
+    throw new Error("AI repeated a recent activity twice");
   } catch (error) {
     autoGameAiStatus = {
       result: "failed",
@@ -149,16 +171,17 @@ ${JSON.stringify(input.fallback)}`,
   }
 }
 
-export async function generateDynamicScheduledContent(template: string, fallback: string) {
+export async function generateDynamicScheduledContent(template: string, fallback: string, recentContent: readonly string[] = []) {
   if (!client || !/\{\{(?:daily_|daily_tarot|herb_lore|moon_phase)/.test(template)) return fallback;
   const kind = template.match(/\{\{([^}]+)\}\}/)?.[1] ?? "community";
   const formatRule = kind === "herb_lore"
     ? "Write a declarative educational lore post. Do not ask the reader any question and do not include a reflection prompt."
     : "";
   try {
-    const response = await client.responses.create({
-      model: env.OPENAI_MODEL,
-      instructions: `${personality}
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await client.responses.create({
+        model: env.OPENAI_MODEL,
+        instructions: `${personality}
 Write one original Discord scheduled post in Nymera's warm gothic style.
 Keep it under 900 characters and use tasteful emoji.
 For wellness: be supportive, never diagnose, never pressure disclosure, and say peer support is not professional care.
@@ -166,34 +189,51 @@ For herbs: preserve the supplied safety note and make no treatment claims.
 For tarot or moon content: frame it as reflection, symbolism, or education, never certainty.
 ${formatRule}
 Preserve any leading Discord role mention such as <@&123> exactly.
+Avoid habitual openings such as "the mist whispers," "dear coven," and "step into the haze."
 Return only the finished post, with no introduction or quotation marks.`,
-      input: `Post type: ${kind}\nAccurate source/fallback to creatively rewrite:\n${fallback}`,
-      max_output_tokens: 350
-    });
-    const output = response.output_text.trim() || fallback;
-    const ping = template.match(/^<@&\d+>/)?.[0];
-    return ping && !output.startsWith(ping) ? `${ping}\n${output}` : output;
+        input: `Post type: ${kind}
+Accurate source/fallback to creatively rewrite:
+${fallback}
+
+Recent posts that must not be repeated or closely paraphrased:
+${recentContent.slice(0, 12).map(content => `- ${content}`).join("\n") || "- None"}
+Variety attempt: ${attempt + 1}.`,
+        max_output_tokens: 500
+      });
+      const output = response.output_text.trim();
+      if (!output || isTooSimilar(output, recentContent)) continue;
+      const ping = template.match(/^<@&\d+>/)?.[0];
+      return ping && !output.startsWith(ping) ? `${ping}\n${output}` : output;
+    }
+    return fallback;
   } catch {
     return fallback;
   }
 }
 
-export async function generateConversationStarter(fallback: string, previous = "") {
+export async function generateConversationStarter(fallback: string, recentContent: readonly string[] = []) {
   if (!client) return fallback;
   try {
-    const response = await client.responses.create({
-      model: env.OPENAI_MODEL,
-      instructions: `${personality}
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await client.responses.create({
+        model: env.OPENAI_MODEL,
+        instructions: `${personality}
 Write one original, friendly Discord conversation starter for a gothic, witchy, horror, gaming, or general community.
 Use one tasteful emoji and ask exactly one easy-to-answer, open-ended question.
 Avoid medical or crisis topics, divisive politics, sexual content, graphic violence, pressure to disclose personal information, and yes/no questions.
+Vary the subject, sentence shape, emoji, and opening. Do not habitually mention mist, moonlight, the coven, or choosing between two things.
 Keep it under 280 characters. Return only the finished conversation starter.`,
-      input: `Create a fresh starter unlike these examples:
+        input: `Create a fresh starter unlike these examples:
 Fallback: ${fallback}
-Previous post: ${previous || "(none)"}`,
-      max_output_tokens: 120
-    });
-    return response.output_text.trim().slice(0, 500) || fallback;
+Recent posts:
+${recentContent.slice(0, 12).map(content => `- ${content}`).join("\n") || "- None"}
+Variety attempt: ${attempt + 1}.`,
+        max_output_tokens: 180
+      });
+      const output = response.output_text.trim().slice(0, 500);
+      if (output && !isTooSimilar(output, recentContent)) return output;
+    }
+    return fallback;
   } catch {
     return fallback;
   }
@@ -207,7 +247,7 @@ export async function askNymera(input: { guildId: string; channelId: string; use
   const recent = await prisma.aiMemory.findMany({
     where: { guildId: input.guildId, channelId: input.channelId },
     orderBy: { createdAt: "desc" },
-    take: 8
+    take: 16
   });
   const longTerm = await prisma.aiUserMemory.findUnique({
     where: { guildId_userId: { guildId: input.guildId, userId: input.userId } }
@@ -215,7 +255,9 @@ export async function askNymera(input: { guildId: string; channelId: string; use
   const context = recent.reverse().map(m => `${m.role}: ${m.content}`).join("\n");
   const response = await client.responses.create({
     model: env.OPENAI_MODEL,
-    instructions: `${personality}\n${modeInstructions[config.aiMode] ?? modeInstructions.mystic}${input.conversation
+    instructions: `${personality}
+Avoid repeating greetings, metaphors, conclusions, or catchphrases used in the recent conversation. Match the current topic directly; the gothic personality should be a light accent, not the subject of every reply.
+${modeInstructions[config.aiMode] ?? modeInstructions.mystic}${input.conversation
       ? "\nJoin the ongoing community conversation naturally. Respond to what was said without acting like a help desk, asking a forced follow-up question, or dominating the channel. Keep the reply brief—usually one to three sentences."
       : ""}`,
     input: `${longTerm?.enabled && longTerm.summary ? `Member-approved long-term memory:\n${longTerm.summary}\n\n` : ""}${context ? `Recent conversation:\n${context}\n\n` : ""}User ${input.userId}: ${input.prompt}`,

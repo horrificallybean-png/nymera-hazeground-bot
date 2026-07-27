@@ -62,17 +62,41 @@ export async function startScheduler(client: Client) {
       const nextVariant = post.lastVariantIndex + 1;
       try {
         const fallback = renderRotatingContent(post.content, nextVariant);
-        const content = await generateDynamicScheduledContent(post.content, fallback);
+        const kind = `scheduled_post:${post.id}`;
+        const history = await prisma.generatedContentHistory.findMany({
+          where: { guildId: post.guildId, kind },
+          orderBy: { createdAt: "desc" },
+          take: 12
+        });
+        const content = await generateDynamicScheduledContent(
+          post.content,
+          fallback,
+          history.map(entry => entry.content)
+        );
         const magicPost = /\{\{(?:daily_tarot|herb_lore|moon_phase)\}\}/.test(post.content);
         await channel.send({
           content,
           ...(magicPost ? discordArtwork("magic-banner.png") : { files: [], embeds: [] })
         });
         post.lastVariantIndex = nextVariant;
-        await prisma.scheduledPost.update({
-          where: { id: post.id },
-          data: { lastVariantIndex: nextVariant }
+        await prisma.$transaction([
+          prisma.scheduledPost.update({
+            where: { id: post.id },
+            data: { lastVariantIndex: nextVariant }
+          }),
+          prisma.generatedContentHistory.create({
+            data: { guildId: post.guildId, kind, content }
+          })
+        ]);
+        const expired = await prisma.generatedContentHistory.findMany({
+          where: { guildId: post.guildId, kind },
+          orderBy: { createdAt: "desc" },
+          skip: 30,
+          select: { id: true }
         });
+        if (expired.length) {
+          await prisma.generatedContentHistory.deleteMany({ where: { id: { in: expired.map(entry => entry.id) } } });
+        }
       } catch (error) {
         logger.error({ err: error, postId: post.id }, "Scheduled post failed");
       }

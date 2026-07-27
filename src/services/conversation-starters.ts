@@ -41,12 +41,30 @@ export async function postConversationStarter(client: Client, guildId: string): 
   const rotation = Math.floor(Date.now() / (config.aiConversationStarterMinutes * 60_000));
   const fallback = starters[Math.abs(rotation) % starters.length]!;
   try {
-    const content = await generateConversationStarter(fallback, config.aiConversationStarterLastText);
-    await channel.send(content);
-    await prisma.guildConfig.update({
-      where: { guildId },
-      data: { aiConversationStarterLastAt: new Date(), aiConversationStarterLastText: content }
+    const history = await prisma.generatedContentHistory.findMany({
+      where: { guildId, kind: "conversation_starter" },
+      orderBy: { createdAt: "desc" },
+      take: 12
     });
+    const recentContent = [config.aiConversationStarterLastText, ...history.map(entry => entry.content)].filter(Boolean);
+    const content = await generateConversationStarter(fallback, recentContent);
+    await channel.send(content);
+    await prisma.$transaction([
+      prisma.guildConfig.update({
+        where: { guildId },
+        data: { aiConversationStarterLastAt: new Date(), aiConversationStarterLastText: content }
+      }),
+      prisma.generatedContentHistory.create({ data: { guildId, kind: "conversation_starter", content } })
+    ]);
+    const expired = await prisma.generatedContentHistory.findMany({
+      where: { guildId, kind: "conversation_starter" },
+      orderBy: { createdAt: "desc" },
+      skip: 30,
+      select: { id: true }
+    });
+    if (expired.length) {
+      await prisma.generatedContentHistory.deleteMany({ where: { id: { in: expired.map(entry => entry.id) } } });
+    }
     return { ok: true, content };
   } catch (error) {
     logger.error({ error, guildId }, "AI conversation starter failed");
