@@ -8,7 +8,7 @@ import { prisma } from "../database.js";
 import { logger } from "../logger.js";
 import { generateAutoGameRound } from "./ai.js";
 import { secureInt } from "./games.js";
-import { discordAsset } from "./assets.js";
+import { discordArtwork } from "./assets.js";
 
 type ChoiceActivity = {
   type: "choice";
@@ -106,7 +106,7 @@ async function hostChoice(channel: TextChannel, activity: ChoiceActivity, config
   const message = await channel.send({
     content: `${prefix(config.pingRoleId, generated.title)}\n${generated.question}\n\nChoose within **${Math.ceil(config.answerSeconds / 60)} minute(s)**. Correct answers earn **100 Spellmarks**.`,
     components: [row],
-    files: discordAsset("games-banner.png"),
+    ...discordArtwork("games-banner.png"),
     allowedMentions: { roles: config.pingRoleId ? [config.pingRoleId] : [] }
   });
   const answered = new Set<string>();
@@ -142,7 +142,7 @@ async function hostText(channel: TextChannel, activity: TextActivity, guildId: s
   const message = await channel.send({
     content: `${prefix(roleId, activity.title)}\n${activity.question}\n\nThe first correct message within **${Math.ceil(seconds / 60)} minute(s)** wins **150 Spellmarks**.`,
     allowedMentions: { roles: roleId ? [roleId] : [] },
-    files: discordAsset("games-banner.png")
+    ...discordArtwork("games-banner.png")
   });
   const collector = channel.createMessageCollector({
     time: seconds * 1000,
@@ -170,7 +170,7 @@ async function hostPoll(channel: TextChannel, activity: PollActivity, roleId: st
   const message = await channel.send({
     content: `${prefix(roleId, activity.title)}\n${activity.question}`,
     components: [row],
-    files: discordAsset("games-banner.png"),
+    ...discordArtwork("games-banner.png"),
     allowedMentions: { roles: roleId ? [roleId] : [] }
   });
   const votes = new Map<string, number>();
@@ -194,7 +194,7 @@ async function hostRace(channel: TextChannel, activity: SimpleActivity, guildId:
   const message = await channel.send({
     content: `${prefix(roleId, activity.title)}\n${activity.question}`,
     components: [row],
-    files: discordAsset("games-banner.png"),
+    ...discordArtwork("games-banner.png"),
     allowedMentions: { roles: roleId ? [roleId] : [] }
   });
   const collector = message.createMessageComponentCollector({ componentType: ComponentType.Button, time: seconds * 1000, max: 1 });
@@ -218,7 +218,7 @@ async function hostTreasure(channel: TextChannel, activity: SimpleActivity, guil
   const message = await channel.send({
     content: `${prefix(roleId, activity.title)}\n${activity.question}`,
     components: [row],
-    files: discordAsset("games-banner.png"),
+    ...discordArtwork("games-banner.png"),
     allowedMentions: { roles: roleId ? [roleId] : [] }
   });
   const tried = new Set<string>();
@@ -247,7 +247,7 @@ async function hostGiveaway(channel: TextChannel, activity: SimpleActivity, guil
   const message = await channel.send({
     content: `${prefix(roleId, activity.title)}\n${activity.question}`,
     components: [row],
-    files: discordAsset("games-banner.png"),
+    ...discordArtwork("games-banner.png"),
     allowedMentions: { roles: roleId ? [roleId] : [] }
   });
   const entrants = new Set<string>();
@@ -269,7 +269,7 @@ async function hostCounting(channel: TextChannel, activity: SimpleActivity, guil
   const start = await channel.send({
     content: `${prefix(roleId, activity.title)}\n${activity.question}`,
     allowedMentions: { roles: roleId ? [roleId] : [] },
-    files: discordAsset("games-banner.png")
+    ...discordArtwork("games-banner.png")
   });
   let next = 1;
   let lastUser = "";
@@ -298,7 +298,7 @@ async function hostWordChain(channel: TextChannel, activity: SimpleActivity, gui
   const start = await channel.send({
     content: `${prefix(roleId, activity.title)}\n${activity.question}`,
     allowedMentions: { roles: roleId ? [roleId] : [] },
-    files: discordAsset("games-banner.png")
+    ...discordArtwork("games-banner.png")
   });
   let previous = startWord;
   let lastUser = "";

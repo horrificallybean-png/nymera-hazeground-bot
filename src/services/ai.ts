@@ -17,6 +17,14 @@ const modeInstructions: Record<string, string> = {
 };
 
 export const aiConfigured = Boolean(client);
+let autoGameAiStatus: {
+  result: "not_configured" | "not_tested" | "success" | "failed";
+  attemptedAt: Date | null;
+  error?: string;
+} = {
+  result: client ? "not_tested" : "not_configured",
+  attemptedAt: null
+};
 
 function parseJsonObject(text: string) {
   const first = text.indexOf("{");
@@ -37,7 +45,10 @@ export async function generateAutoGameRound(
   fallback: { title: string; question: string; choices: readonly string[]; answer: number },
   recentQuestions: readonly string[] = []
 ) {
-  if (!client) return fallback;
+  if (!client) {
+    autoGameAiStatus = { result: "not_configured", attemptedAt: new Date() };
+    return fallback;
+  }
   try {
     const response = await client.responses.create({
       model: env.OPENAI_MODEL,
@@ -56,10 +67,27 @@ Create a genuinely different question with a different answer concept.`,
     const repeated = recentQuestions.some(question =>
       question.toLowerCase().replaceAll(/[^a-z0-9]/g, "") === normalized
     );
+    autoGameAiStatus = { result: "success", attemptedAt: new Date() };
     return repeated ? fallback : generated;
-  } catch {
+  } catch (error) {
+    autoGameAiStatus = {
+      result: "failed",
+      attemptedAt: new Date(),
+      error: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300)
+    };
     return fallback;
   }
+}
+
+export async function testAutoGameAi() {
+  const marker = `Nymera AI test ${Date.now()}`;
+  await generateAutoGameRound("family-friendly gothic folklore trivia", {
+    title: "AI Test",
+    question: marker,
+    choices: ["One", "Two", "Three", "Four"],
+    answer: 0
+  }, [marker]);
+  return { ...autoGameAiStatus, configured: aiConfigured };
 }
 
 export async function generateDynamicScheduledContent(template: string, fallback: string) {

@@ -4,6 +4,7 @@ import {
 import type { Command } from "../types.js";
 import { prisma } from "../database.js";
 import { launchAutoGame } from "../services/auto-games.js";
+import { aiConfigured, testAutoGameAi } from "../services/ai.js";
 
 export const autoGameCommands: Command[] = [{
   data: new SlashCommandBuilder().setName("auto-games").setDescription("Configure Nymera's rotating activity host")
@@ -15,6 +16,7 @@ export const autoGameCommands: Command[] = [{
       .addRoleOption(o => o.setName("ping_role").setDescription("Optional role to notify for each game")))
     .addSubcommand(s => s.setName("disable").setDescription("Disable automatic games"))
     .addSubcommand(s => s.setName("status").setDescription("Show automatic-game settings"))
+    .addSubcommand(s => s.setName("ai-test").setDescription("Test AI-generated trivia without posting a game"))
     .addSubcommand(s => s.setName("start-now").setDescription("Start the next game immediately")),
   async execute(i) {
     const sub = i.options.getSubcommand();
@@ -53,10 +55,22 @@ export const autoGameCommands: Command[] = [{
       await i.reply({ content: "Nymera's automatic activity host is disabled.", ephemeral: true });
       return;
     }
+    if (sub === "ai-test") {
+      await i.deferReply({ ephemeral: true });
+      const result = await testAutoGameAi();
+      if (result.result === "success") {
+        await i.editReply(`✅ AI-generated trivia is working with the configured OpenAI model. The other activity types continue using Nymera's built-in game logic.`);
+      } else if (!result.configured || result.result === "not_configured") {
+        await i.editReply("AI-generated trivia is disabled because `OPENAI_API_KEY` is missing. Automatic games still work using built-in questions.");
+      } else {
+        await i.editReply(`AI trivia could not reach OpenAI, so Nymera will safely use built-in questions.\nReason: \`${result.error ?? "Unknown OpenAI error"}\``);
+      }
+      return;
+    }
     const config = await prisma.autoGameConfig.findUnique({ where: { guildId: i.guildId! } });
     if (sub === "status") {
       await i.reply({ content: config
-        ? `Status: **${config.enabled ? "enabled" : "disabled"}**\nChannel: <#${config.channelId}>\nInterval: ${config.intervalMinutes} minutes\nAnswer window: ${Math.ceil(config.answerSeconds / 60)} minutes\nPing role: ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "none"}\nLast game: ${config.lastRunAt ? `<t:${Math.floor(config.lastRunAt.getTime() / 1000)}:R>` : "never"}`
+        ? `Status: **${config.enabled ? "enabled" : "disabled"}**\nChannel: <#${config.channelId}>\nInterval: ${config.intervalMinutes} minutes\nAnswer window: ${Math.ceil(config.answerSeconds / 60)} minutes\nPing role: ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "none"}\nAI-generated trivia: **${aiConfigured ? "configured" : "using built-in fallback"}**\nLast game: ${config.lastRunAt ? `<t:${Math.floor(config.lastRunAt.getTime() / 1000)}:R>` : "never"}`
         : "Automatic games are not configured.", ephemeral: true });
       return;
     }
