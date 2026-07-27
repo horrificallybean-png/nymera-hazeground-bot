@@ -19,6 +19,43 @@ const starters = [
 ] as const;
 
 let starterTimer: NodeJS.Timeout | undefined;
+const postingGuilds = new Set<string>();
+
+export type ConversationStarterResult = {
+  ok: boolean;
+  reason?: string;
+  content?: string;
+};
+
+export async function postConversationStarter(client: Client, guildId: string): Promise<ConversationStarterResult> {
+  if (postingGuilds.has(guildId)) return { ok: false, reason: "Nymera is already preparing a conversation starter." };
+  const config = await prisma.guildConfig.findUnique({ where: { guildId } });
+  if (!config?.aiEnabled) return { ok: false, reason: "Nymera's AI is disabled. Enable it with `/setup ai_enabled:True`." };
+  if (!config.aiConversationStarterEnabled) return { ok: false, reason: "Conversation starters are disabled. Enable `start_conversations` with `/ai-settings`." };
+  if (!config.aiConversationChannelId) return { ok: false, reason: "No conversation channel is configured. Set `conversation_channel` with `/ai-settings`." };
+  const channel = await client.channels.fetch(config.aiConversationChannelId).catch(() => null);
+  if (!channel || !("send" in channel)) {
+    return { ok: false, reason: `Nymera cannot access or post in <#${config.aiConversationChannelId}>. Check View Channel and Send Messages permissions.` };
+  }
+  postingGuilds.add(guildId);
+  const rotation = Math.floor(Date.now() / (config.aiConversationStarterMinutes * 60_000));
+  const fallback = starters[Math.abs(rotation) % starters.length]!;
+  try {
+    const content = await generateConversationStarter(fallback, config.aiConversationStarterLastText);
+    await channel.send(content);
+    await prisma.guildConfig.update({
+      where: { guildId },
+      data: { aiConversationStarterLastAt: new Date(), aiConversationStarterLastText: content }
+    });
+    return { ok: true, content };
+  } catch (error) {
+    logger.error({ error, guildId }, "AI conversation starter failed");
+    const detail = error instanceof Error ? error.message : String(error);
+    return { ok: false, reason: `The conversation starter failed: \`${detail.slice(0, 500)}\`` };
+  } finally {
+    postingGuilds.delete(guildId);
+  }
+}
 
 async function postDueStarters(client: Client) {
   const configs = await prisma.guildConfig.findMany({
@@ -33,23 +70,8 @@ async function postDueStarters(client: Client) {
     const dueAt = (config.aiConversationStarterLastAt?.getTime() ?? config.updatedAt.getTime()) +
       config.aiConversationStarterMinutes * 60_000;
     if (now < dueAt) continue;
-    const channel = await client.channels.fetch(config.aiConversationChannelId!).catch(() => null);
-    if (!channel || !("send" in channel)) {
-      logger.warn({ guildId: config.guildId }, "AI conversation-starter channel unavailable");
-      continue;
-    }
-    const rotation = Math.floor(now / (config.aiConversationStarterMinutes * 60_000));
-    const fallback = starters[Math.abs(rotation) % starters.length]!;
-    try {
-      const content = await generateConversationStarter(fallback, config.aiConversationStarterLastText);
-      await channel.send(content);
-      await prisma.guildConfig.update({
-        where: { guildId: config.guildId },
-        data: { aiConversationStarterLastAt: new Date(), aiConversationStarterLastText: content }
-      });
-    } catch (error) {
-      logger.error({ error, guildId: config.guildId }, "AI conversation starter failed");
-    }
+    const result = await postConversationStarter(client, config.guildId);
+    if (!result.ok) logger.warn({ guildId: config.guildId, reason: result.reason }, "Scheduled conversation starter did not post");
   }
 }
 

@@ -3,6 +3,7 @@ import type { Command } from "../types.js";
 import { askNymera } from "../services/ai.js";
 import { trimDiscord } from "../utils/respond.js";
 import { ensureGuild, prisma } from "../database.js";
+import { postConversationStarter } from "../services/conversation-starters.js";
 
 export const aiCommands: Command[] = [{
   data: new SlashCommandBuilder().setName("ask").setDescription("Ask Nymera a question")
@@ -72,6 +73,32 @@ export const aiCommands: Command[] = [{
         : "Off", inline: true },
       { name: "AI moderation", value: updated.aiModerationEnabled ? `Suggestions → ${updated.aiReviewChannelId ? `<#${updated.aiReviewChannelId}>` : "review channel not set"}` : "Off" }
     )], ephemeral: true });
+  }
+},
+{
+  data: new SlashCommandBuilder().setName("conversation-start").setDescription("Test or inspect Nymera's automatic conversation starters")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addSubcommand(s => s.setName("now").setDescription("Post a conversation starter immediately"))
+    .addSubcommand(s => s.setName("status").setDescription("Show configuration and the next scheduled starter")),
+  async execute(i, client) {
+    const config = await ensureGuild(i.guildId!);
+    if (i.options.getSubcommand() === "status") {
+      const dueAt = (config.aiConversationStarterLastAt?.getTime() ?? config.updatedAt.getTime()) +
+        config.aiConversationStarterMinutes * 60_000;
+      await i.reply({
+        content: `AI: **${config.aiEnabled ? "enabled" : "disabled"}**\n` +
+          `Starters: **${config.aiConversationStarterEnabled ? "enabled" : "disabled"}**\n` +
+          `Channel: ${config.aiConversationChannelId ? `<#${config.aiConversationChannelId}>` : "**not configured**"}\n` +
+          `Interval: **${config.aiConversationStarterMinutes} minutes**\n` +
+          `Last starter: ${config.aiConversationStarterLastAt ? `<t:${Math.floor(config.aiConversationStarterLastAt.getTime() / 1000)}:R>` : "never"}\n` +
+          `Next starter: ${config.aiConversationStarterEnabled ? `<t:${Math.floor(dueAt / 1000)}:R>` : "not scheduled"}`,
+        ephemeral: true
+      });
+      return;
+    }
+    await i.deferReply({ ephemeral: true });
+    const result = await postConversationStarter(client, i.guildId!);
+    await i.editReply(result.ok ? "Nymera started a conversation in the configured channel." : result.reason ?? "Nymera could not start the conversation.");
   }
 },
 {
