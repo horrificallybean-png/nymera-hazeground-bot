@@ -5,6 +5,90 @@ import {
 import type { Command } from "../types.js";
 import { ensureGuild, prisma } from "../database.js";
 import { endGiveaway, giveawayEmbed, parseDuration } from "../services/community.js";
+import { discordAsset } from "../services/assets.js";
+
+const communityRolePanels = [
+  {
+    title: "Choose Your Pronouns",
+    description: "Choose every option that feels right for you. Click a button again whenever you want to remove it.",
+    image: "roles-pronouns-banner.png",
+    color: 0xa86ee8,
+    roles: [
+      ["She / Her", "🌙 She / Her"],
+      ["He / Him", "🗡️ He / Him"],
+      ["They / Them", "✨ They / Them"],
+      ["Any Pronouns", "🌈 Any Pronouns"],
+      ["Ask My Pronouns", "💬 Ask Me"]
+    ]
+  },
+  {
+    title: "Choose Your Games",
+    description: "Find members who enjoy the same kinds of games and receive relevant community pings.",
+    image: "roles-games-banner.png",
+    color: 0x6f42c1,
+    roles: [
+      ["Dead by Daylight", "🩸 Dead by Daylight"],
+      ["Horror Games", "👻 Horror Games"],
+      ["Cozy Games", "🍄 Cozy Games"],
+      ["Roleplaying Games", "🐉 RPGs"],
+      ["Party Games", "🎉 Party Games"],
+      ["Action & FPS", "🎯 Action / FPS"],
+      ["Indie Games", "🕹️ Indie Games"],
+      ["Tabletop Games", "🎲 Tabletop"]
+    ]
+  },
+  {
+    title: "Choose Your Interests",
+    description: "Show the community what you love and discover people with shared interests.",
+    image: "roles-interests-banner.png",
+    color: 0x8e55b7,
+    roles: [
+      ["Art", "🎨 Art"],
+      ["Music", "🎧 Music"],
+      ["Books", "📚 Books"],
+      ["Movies & TV", "🎬 Movies / TV"],
+      ["Anime", "🌸 Anime"],
+      ["Writing", "✒️ Writing"],
+      ["Nature", "🌿 Nature"],
+      ["Pets", "🐈 Pets"],
+      ["Community Events", "🎊 Events"],
+      ["Friendly Chat", "☕ Friendly Chat"]
+    ]
+  },
+  {
+    title: "Choose Your Magic Interests",
+    description: "Select the magical, historical, and reflective subjects you would enjoy exploring.",
+    image: "roles-magic-banner.png",
+    color: 0x5f9f48,
+    roles: [
+      ["Tarot & Oracle", "🔮 Tarot / Oracle"],
+      ["Astrology", "🪐 Astrology"],
+      ["Herbal Lore", "🌿 Herbal Lore"],
+      ["Crystals", "💎 Crystals"],
+      ["Witchcraft History", "🕯️ Witchcraft"],
+      ["Folklore", "📜 Folklore"],
+      ["Moon & Cosmos", "🌙 Moon / Cosmos"],
+      ["Spellcraft", "📖 Spellcraft"],
+      ["Divination", "🪞 Divination"],
+      ["Mythology", "🏛️ Mythology"]
+    ]
+  }
+] as const;
+
+function buttonRows(entries: readonly { roleId: string; label: string }[]) {
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  for (let index = 0; index < entries.length; index += 5) {
+    rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
+      entries.slice(index, index + 5).map(entry =>
+        new ButtonBuilder()
+          .setCustomId(`rolebutton:${entry.roleId}`)
+          .setLabel(entry.label)
+          .setStyle(ButtonStyle.Secondary)
+      )
+    ));
+  }
+  return rows;
+}
 
 export const communityCommands: Command[] = [
   {
@@ -135,6 +219,73 @@ export const communityCommands: Command[] = [
         create: { guildId: i.guildId!, channelId: channel.id, messageId, emoji, roleId: role.id }
       });
       await i.reply({ content: `Reaction role saved for ${role}.`, ephemeral: true });
+    }
+  },
+  {
+    data: new SlashCommandBuilder().setName("community-role-panels").setDescription("Create pronoun, game, interest, and magic role panels")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+      .addChannelOption(o => o.setName("channel").setDescription("Channel where all four panels will be posted").setRequired(true).addChannelTypes(ChannelType.GuildText)),
+    async execute(i) {
+      const channel = i.options.getChannel("channel", true);
+      if (!("send" in channel)) return;
+      const botMember = i.guild!.members.me;
+      if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        return void await i.reply({ content: "Nymera needs the **Manage Roles** permission first.", ephemeral: true });
+      }
+      await i.deferReply({ ephemeral: true });
+      let createdRoles = 0;
+      let reusedRoles = 0;
+      for (const panel of communityRolePanels) {
+        const entries: { roleId: string; label: string }[] = [];
+        for (const [roleName, label] of panel.roles) {
+          let role = i.guild!.roles.cache.find(candidate => candidate.name.toLowerCase() === roleName.toLowerCase());
+          if (role) {
+            if (role.managed || role.position >= botMember.roles.highest.position) {
+              await i.editReply(`I found **${role.name}**, but I cannot manage it. Move Nymera's bot role above that role and run the command again.`);
+              return;
+            }
+            reusedRoles++;
+          } else {
+            role = await i.guild!.roles.create({
+              name: roleName,
+              color: panel.color,
+              mentionable: false,
+              reason: `Community role panel created by ${i.user.tag}`
+            });
+            createdRoles++;
+          }
+          entries.push({ roleId: role.id, label });
+        }
+        const files = discordAsset(panel.image);
+        const embed = new EmbedBuilder()
+          .setColor(panel.color)
+          .setTitle(panel.title)
+          .setDescription(panel.description);
+        if (files.length) embed.setImage(`attachment://${panel.image}`);
+        const message = await channel.send({
+          embeds: [embed],
+          components: buttonRows(entries),
+          files
+        });
+        await prisma.$transaction(entries.map(entry => prisma.reactionRole.upsert({
+          where: {
+            guildId_messageId_emoji: {
+              guildId: i.guildId!,
+              messageId: message.id,
+              emoji: `button:${entry.roleId}`
+            }
+          },
+          update: { roleId: entry.roleId, channelId: channel.id },
+          create: {
+            guildId: i.guildId!,
+            channelId: channel.id,
+            messageId: message.id,
+            emoji: `button:${entry.roleId}`,
+            roleId: entry.roleId
+          }
+        })));
+      }
+      await i.editReply(`Four image role panels were created in ${channel}. Created **${createdRoles}** roles and reused **${reusedRoles}** existing roles.`);
     }
   },
   {
