@@ -88,11 +88,46 @@ async function reward(guildId: string, userId: string, amount: number, game: str
   ]);
 }
 
-const prefix = (roleId: string | null, title: string) =>
-  `${roleId ? `<@&${roleId}>\n\n` : ""}## ${title}`;
+const prefix = (roleIds: readonly string[], title: string) =>
+  `${roleIds.length ? `${roleIds.map(roleId => `<@&${roleId}>`).join(" ")}\n\n` : ""}## ${title}`;
+
+const activityRoleNames: Record<string, readonly string[]> = {
+  auto_dbd: ["Dead by Daylight"],
+  auto_dbd_2: ["Dead by Daylight"],
+  auto_horror: ["Horror Games"],
+  auto_horror_2: ["Horror Games"],
+  auto_ghost: ["Horror Games", "Party Games"],
+  auto_hangman: ["Horror Games", "Party Games"],
+  auto_riddle: ["Party Games"],
+  auto_riddle_2: ["Party Games"],
+  auto_hexed: ["Party Games"],
+  auto_unscramble: ["Party Games"],
+  auto_unscramble_2: ["Party Games"],
+  auto_emoji: ["Party Games"],
+  auto_number: ["Tabletop Games", "Party Games"],
+  auto_herb: ["Party Games"],
+  auto_moon: ["Party Games"],
+  auto_this_or_that: ["Party Games"],
+  auto_poll: ["Party Games"],
+  auto_reaction: ["Party Games"],
+  auto_encounter: ["Roleplaying Games", "Party Games"],
+  auto_treasure: ["Roleplaying Games", "Party Games"],
+  auto_giveaway: ["Party Games"],
+  auto_counting: ["Party Games"],
+  auto_last_letter: ["Party Games"],
+  auto_wordchain: ["Party Games"]
+};
+
+function resolveActivityRoleIds(channel: TextChannel, activity: Activity, extraRoleId: string | null) {
+  const roleNames = [...(activityRoleNames[activity.game] ?? ["Party Games"]), "Game Alerts"];
+  const matched = roleNames.map(name =>
+    channel.guild.roles.cache.find(role => role.name.toLowerCase() === name.toLowerCase())?.id
+  ).filter((roleId): roleId is string => Boolean(roleId));
+  return [...new Set([extraRoleId, ...matched].filter((roleId): roleId is string => Boolean(roleId)))];
+}
 
 async function hostChoice(channel: TextChannel, activity: ChoiceActivity, config: {
-  guildId: string; pingRoleId: string | null; answerSeconds: number; intervalMinutes: number;
+  guildId: string; pingRoleIds: readonly string[]; answerSeconds: number; intervalMinutes: number;
 }) {
   const recent = await prisma.autoGameHistory.findMany({
     where: { guildId: config.guildId },
@@ -105,10 +140,10 @@ async function hostChoice(channel: TextChannel, activity: ChoiceActivity, config
     new ButtonBuilder().setCustomId(`autogame:${sessionId}:${index}`).setLabel(`${index + 1}. ${choice}`).setStyle(ButtonStyle.Secondary)
   ));
   const message = await channel.send({
-    content: `${prefix(config.pingRoleId, generated.title)}\n${generated.question}\n\nChoose within **${Math.ceil(config.answerSeconds / 60)} minute(s)**. Correct answers earn **100 Spellmarks**.`,
+    content: `${prefix(config.pingRoleIds, generated.title)}\n${generated.question}\n\nChoose within **${Math.ceil(config.answerSeconds / 60)} minute(s)**. Correct answers earn **100 Spellmarks**.`,
     components: [row],
     ...discordArtwork("games-banner.png"),
-    allowedMentions: { roles: config.pingRoleId ? [config.pingRoleId] : [] }
+    allowedMentions: { roles: [...config.pingRoleIds] }
   });
   const answered = new Set<string>();
   const collector = message.createMessageComponentCollector({ componentType: ComponentType.Button, time: config.answerSeconds * 1000 });
@@ -139,10 +174,10 @@ async function hostChoice(channel: TextChannel, activity: ChoiceActivity, config
   return generated.question;
 }
 
-async function hostText(channel: TextChannel, activity: TextActivity, guildId: string, roleId: string | null, seconds: number) {
+async function hostText(channel: TextChannel, activity: TextActivity, guildId: string, roleIds: readonly string[], seconds: number) {
   const message = await channel.send({
-    content: `${prefix(roleId, activity.title)}\n${activity.question}\n\nThe first correct message within **${Math.ceil(seconds / 60)} minute(s)** wins **150 Spellmarks**.`,
-    allowedMentions: { roles: roleId ? [roleId] : [] },
+    content: `${prefix(roleIds, activity.title)}\n${activity.question}\n\nThe first correct message within **${Math.ceil(seconds / 60)} minute(s)** wins **150 Spellmarks**.`,
+    allowedMentions: { roles: [...roleIds] },
     ...discordArtwork("games-banner.png")
   });
   const collector = channel.createMessageCollector({
@@ -163,16 +198,16 @@ async function hostText(channel: TextChannel, activity: TextActivity, guildId: s
   });
 }
 
-async function hostPoll(channel: TextChannel, activity: PollActivity, roleId: string | null, seconds: number) {
+async function hostPoll(channel: TextChannel, activity: PollActivity, roleIds: readonly string[], seconds: number) {
   const id = randomBytes(5).toString("hex");
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(activity.choices.map((choice, index) =>
     new ButtonBuilder().setCustomId(`poll:${id}:${index}`).setLabel(choice).setStyle(ButtonStyle.Primary)
   ));
   const message = await channel.send({
-    content: `${prefix(roleId, activity.title)}\n${activity.question}`,
+    content: `${prefix(roleIds, activity.title)}\n${activity.question}`,
     components: [row],
     ...discordArtwork("games-banner.png"),
-    allowedMentions: { roles: roleId ? [roleId] : [] }
+    allowedMentions: { roles: [...roleIds] }
   });
   const votes = new Map<string, number>();
   const collector = message.createMessageComponentCollector({ componentType: ComponentType.Button, time: seconds * 1000 });
@@ -187,16 +222,16 @@ async function hostPoll(channel: TextChannel, activity: PollActivity, roleId: st
   });
 }
 
-async function hostRace(channel: TextChannel, activity: SimpleActivity, guildId: string, roleId: string | null, seconds: number) {
+async function hostRace(channel: TextChannel, activity: SimpleActivity, guildId: string, roleIds: readonly string[], seconds: number) {
   const id = randomBytes(5).toString("hex");
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(`race:${id}`).setLabel(activity.game === "auto_encounter" ? "Calm the wolf" : "Claim the sigil").setStyle(ButtonStyle.Success)
   );
   const message = await channel.send({
-    content: `${prefix(roleId, activity.title)}\n${activity.question}`,
+    content: `${prefix(roleIds, activity.title)}\n${activity.question}`,
     components: [row],
     ...discordArtwork("games-banner.png"),
-    allowedMentions: { roles: roleId ? [roleId] : [] }
+    allowedMentions: { roles: [...roleIds] }
   });
   const collector = message.createMessageComponentCollector({ componentType: ComponentType.Button, time: seconds * 1000, max: 1 });
   collector.on("collect", interaction => {
@@ -210,17 +245,17 @@ async function hostRace(channel: TextChannel, activity: SimpleActivity, guildId:
   });
 }
 
-async function hostTreasure(channel: TextChannel, activity: SimpleActivity, guildId: string, roleId: string | null, seconds: number) {
+async function hostTreasure(channel: TextChannel, activity: SimpleActivity, guildId: string, roleIds: readonly string[], seconds: number) {
   const id = randomBytes(5).toString("hex");
   const winningChest = secureInt(0, 2);
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents([0, 1, 2].map(index =>
     new ButtonBuilder().setCustomId(`chest:${id}:${index}`).setLabel(`Chest ${index + 1}`).setStyle(ButtonStyle.Secondary)
   ));
   const message = await channel.send({
-    content: `${prefix(roleId, activity.title)}\n${activity.question}`,
+    content: `${prefix(roleIds, activity.title)}\n${activity.question}`,
     components: [row],
     ...discordArtwork("games-banner.png"),
-    allowedMentions: { roles: roleId ? [roleId] : [] }
+    allowedMentions: { roles: [...roleIds] }
   });
   const tried = new Set<string>();
   const collector = message.createMessageComponentCollector({ componentType: ComponentType.Button, time: seconds * 1000 });
@@ -240,16 +275,16 @@ async function hostTreasure(channel: TextChannel, activity: SimpleActivity, guil
   });
 }
 
-async function hostGiveaway(channel: TextChannel, activity: SimpleActivity, guildId: string, roleId: string | null, seconds: number) {
+async function hostGiveaway(channel: TextChannel, activity: SimpleActivity, guildId: string, roleIds: readonly string[], seconds: number) {
   const id = randomBytes(5).toString("hex");
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(`flash:${id}`).setLabel("Enter giveaway").setStyle(ButtonStyle.Primary)
   );
   const message = await channel.send({
-    content: `${prefix(roleId, activity.title)}\n${activity.question}`,
+    content: `${prefix(roleIds, activity.title)}\n${activity.question}`,
     components: [row],
     ...discordArtwork("games-banner.png"),
-    allowedMentions: { roles: roleId ? [roleId] : [] }
+    allowedMentions: { roles: [...roleIds] }
   });
   const entrants = new Set<string>();
   const collector = message.createMessageComponentCollector({ componentType: ComponentType.Button, time: seconds * 1000 });
@@ -266,10 +301,10 @@ async function hostGiveaway(channel: TextChannel, activity: SimpleActivity, guil
   });
 }
 
-async function hostCounting(channel: TextChannel, activity: SimpleActivity, guildId: string, roleId: string | null, seconds: number) {
+async function hostCounting(channel: TextChannel, activity: SimpleActivity, guildId: string, roleIds: readonly string[], seconds: number) {
   const start = await channel.send({
-    content: `${prefix(roleId, activity.title)}\n${activity.question}`,
-    allowedMentions: { roles: roleId ? [roleId] : [] },
+    content: `${prefix(roleIds, activity.title)}\n${activity.question}`,
+    allowedMentions: { roles: [...roleIds] },
     ...discordArtwork("games-banner.png")
   });
   let next = 1;
@@ -294,11 +329,11 @@ async function hostCounting(channel: TextChannel, activity: SimpleActivity, guil
   });
 }
 
-async function hostWordChain(channel: TextChannel, activity: SimpleActivity, guildId: string, roleId: string | null, seconds: number) {
+async function hostWordChain(channel: TextChannel, activity: SimpleActivity, guildId: string, roleIds: readonly string[], seconds: number) {
   const startWord = activity.startWord ?? (activity.game === "auto_last_letter" ? "moon" : "raven");
   const start = await channel.send({
-    content: `${prefix(roleId, activity.title)}\n${activity.question}`,
-    allowedMentions: { roles: roleId ? [roleId] : [] },
+    content: `${prefix(roleIds, activity.title)}\n${activity.question}`,
+    allowedMentions: { roles: [...roleIds] },
     ...discordArtwork("games-banner.png")
   });
   let previous = startWord;
@@ -387,27 +422,33 @@ export async function launchAutoGame(client: Client, guildId: string): Promise<A
   }
   activeGuilds.add(guildId);
   try {
+    const pingRoleIds = resolveActivityRoleIds(channel, activity, config.pingRoleId);
     await prisma.autoGameConfig.update({
       where: { guildId },
       data: { lastRunAt: new Date(), nextGameIndex: { increment: 1 } }
     });
     if (activity.type === "choice") {
-      const question = await hostChoice(channel, activity, config);
+      const question = await hostChoice(channel, activity, {
+        guildId,
+        pingRoleIds,
+        answerSeconds: config.answerSeconds,
+        intervalMinutes: config.intervalMinutes
+      });
       await prisma.autoGameHistory.create({ data: { guildId, game: activity.game, question } });
     } else if (activity.type === "text") {
-      await hostText(channel, activity, guildId, config.pingRoleId, config.answerSeconds);
+      await hostText(channel, activity, guildId, pingRoleIds, config.answerSeconds);
     } else if (activity.type === "poll") {
-      await hostPoll(channel, activity, config.pingRoleId, config.answerSeconds);
+      await hostPoll(channel, activity, pingRoleIds, config.answerSeconds);
     } else if (activity.type === "race") {
-      await hostRace(channel, activity, guildId, config.pingRoleId, config.answerSeconds);
+      await hostRace(channel, activity, guildId, pingRoleIds, config.answerSeconds);
     } else if (activity.type === "treasure") {
-      await hostTreasure(channel, activity, guildId, config.pingRoleId, config.answerSeconds);
+      await hostTreasure(channel, activity, guildId, pingRoleIds, config.answerSeconds);
     } else if (activity.type === "giveaway") {
-      await hostGiveaway(channel, activity, guildId, config.pingRoleId, config.answerSeconds);
+      await hostGiveaway(channel, activity, guildId, pingRoleIds, config.answerSeconds);
     } else if (activity.type === "counting") {
-      await hostCounting(channel, activity, guildId, config.pingRoleId, config.answerSeconds);
+      await hostCounting(channel, activity, guildId, pingRoleIds, config.answerSeconds);
     } else {
-      await hostWordChain(channel, activity, guildId, config.pingRoleId, config.answerSeconds);
+      await hostWordChain(channel, activity, guildId, pingRoleIds, config.answerSeconds);
     }
     if (activity.type !== "choice") {
       await prisma.autoGameHistory.create({ data: { guildId, game: activity.game, question: activity.question } });

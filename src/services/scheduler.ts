@@ -74,8 +74,10 @@ export async function startScheduler(client: Client) {
           history.map(entry => entry.content)
         );
         const magicPost = /\{\{(?:daily_tarot|herb_lore|moon_phase|magic_six_daily_)\S*\}\}/.test(post.content);
+        const mentionedRoles = [...content.matchAll(/<@&(\d+)>/g)].map(match => match[1]!);
         await channel.send({
           content,
+          allowedMentions: { roles: mentionedRoles },
           ...(magicPost ? discordArtwork("magic-banner.png") : { files: [], embeds: [] })
         });
         post.lastVariantIndex = nextVariant;

@@ -67,6 +67,69 @@ const communityRolePanels = [
             ["Divination", "🪞 Divination"],
             ["Mythology", "🏛️ Mythology"]
         ]
+    },
+    {
+        title: "Choose Your Notifications",
+        description: "Opt into only the community notifications you want. You can change these choices at any time.",
+        image: "roles-notifications-banner.png",
+        color: 0x9b73d1,
+        roles: [
+            ["Announcement Alerts", "📣 Announcements"],
+            ["Event Alerts", "🎊 Events"],
+            ["Giveaway Alerts", "🎁 Giveaways"],
+            ["Game Alerts", "🎮 Game Alerts"],
+            ["Magic Post Alerts", "🔮 Magic Posts"],
+            ["Wellness Check-In Alerts", "🌿 Wellness"],
+            ["Server Update Alerts", "🛠️ Server Updates"]
+        ]
+    },
+    {
+        title: "How Do You Like to Socialize?",
+        description: "Choose the ways you enjoy connecting. These roles help other members understand your social style.",
+        image: "roles-social-banner.png",
+        color: 0x9368c7,
+        roles: [
+            ["Looking for Friends", "💜 New Friends"],
+            ["Text Chat", "💬 Text Chat"],
+            ["Voice Chat", "🎙️ Voice Chat"],
+            ["Quiet Company", "🌙 Quiet Company"],
+            ["Creative Sharing", "🎨 Creative Sharing"],
+            ["Casual Gamer", "🍄 Casual Gamer"],
+            ["Competitive Gamer", "⚔️ Competitive"],
+            ["Group Activities", "✨ Group Activities"]
+        ]
+    },
+    {
+        title: "Choose Your Horror",
+        description: "Show which kinds of spooky stories, films, games, and folklore you enjoy. Keep discussions non-graphic in shared spaces.",
+        image: "roles-horror-banner.png",
+        color: 0x713e91,
+        roles: [
+            ["Gothic Horror", "🏰 Gothic"],
+            ["Supernatural Horror", "👻 Supernatural"],
+            ["Psychological Horror", "🪞 Psychological"],
+            ["Slasher Horror", "🔪 Slashers"],
+            ["Creature Features", "🐺 Creatures"],
+            ["Found Footage", "📹 Found Footage"],
+            ["Horror Literature", "📚 Horror Books"],
+            ["Paranormal Lore", "🕯️ Paranormal Lore"]
+        ]
+    },
+    {
+        title: "Choose Your Trial Role",
+        description: "Find other Dead by Daylight players by role, play style, and favorite activities.",
+        image: "roles-dbd-banner.png",
+        color: 0x60408c,
+        roles: [
+            ["Survivor Main", "🏃 Survivor Main"],
+            ["Killer Main", "🩸 Killer Main"],
+            ["Solo Queue", "🌫️ Solo Queue"],
+            ["SWF Player", "🤝 SWF"],
+            ["Custom Games", "🎲 Custom Games"],
+            ["DBD Build Crafter", "🧰 Build Crafter"],
+            ["DBD Lore Fan", "📜 Lore Fan"],
+            ["DBD Challenge Hunter", "🏆 Challenges"]
+        ]
     }
 ];
 function buttonRows(entries) {
@@ -219,7 +282,7 @@ export const communityCommands = [
         }
     },
     {
-        data: new SlashCommandBuilder().setName("community-role-panels").setDescription("Create pronoun, game, interest, and magic role panels")
+        data: new SlashCommandBuilder().setName("community-role-panels").setDescription("Create eight themed community role panels")
             .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
             .addChannelOption(o => o.setName("channel").setDescription("Channel where all four panels will be posted").setRequired(true).addChannelTypes(ChannelType.GuildText)),
         async execute(i) {
@@ -285,7 +348,7 @@ export const communityCommands = [
                     }
                 })));
             }
-            await i.editReply(`Four image role panels were created in ${channel}. Created **${createdRoles}** roles and reused **${reusedRoles}** existing roles.`);
+            await i.editReply(`Eight image role panels were created in ${channel}. Created **${createdRoles}** roles and reused **${reusedRoles}** existing roles.`);
         }
     },
     {

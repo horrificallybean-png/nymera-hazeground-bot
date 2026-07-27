@@ -6,12 +6,12 @@ import { deterministicDraw, moonPhase, symbolicPlanetaryHour } from "../services
 const findByKeyOrName = (items, query) => items.find(x => x.key === query.toLowerCase().replaceAll(" ", "_")) ??
     items.find(x => x.name.toLowerCase().includes(query.toLowerCase()));
 const sixDailyMagicPosts = [
-    { hour: 6, token: "{{magic_six_daily_dawn}}" },
-    { hour: 9, token: "{{magic_six_daily_morning}}" },
-    { hour: 12, token: "{{magic_six_daily_midday}}" },
-    { hour: 15, token: "{{magic_six_daily_afternoon}}" },
-    { hour: 18, token: "{{magic_six_daily_evening}}" },
-    { hour: 21, token: "{{magic_six_daily_night}}" }
+    { hour: 6, token: "{{magic_six_daily_dawn}}", roleNames: ["Tarot & Oracle", "Divination"] },
+    { hour: 9, token: "{{magic_six_daily_morning}}", roleNames: ["Herbal Lore"] },
+    { hour: 12, token: "{{magic_six_daily_midday}}", roleNames: ["Folklore", "Mythology"] },
+    { hour: 15, token: "{{magic_six_daily_afternoon}}", roleNames: ["Crystals", "Spellcraft"] },
+    { hour: 18, token: "{{magic_six_daily_evening}}", roleNames: ["Astrology", "Moon & Cosmos"] },
+    { hour: 21, token: "{{magic_six_daily_night}}", roleNames: ["Witchcraft History", "Spellcraft"] }
 ];
 function validTimezone(timezone) {
     try {
@@ -150,7 +150,7 @@ export const magicCommands = [
         data: new SlashCommandBuilder().setName("magic-six-daily").setDescription("Schedule six different AI magic posts every day")
             .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
             .addChannelOption(o => o.setName("channel").setDescription("Where all six magic posts appear").setRequired(true).addChannelTypes(ChannelType.GuildText))
-            .addRoleOption(o => o.setName("ping_role").setDescription("Optional role to notify with every magic post"))
+            .addRoleOption(o => o.setName("ping_role").setDescription("Optional extra role to notify with every magic post"))
             .addStringOption(o => o.setName("timezone").setDescription("IANA timezone (default: America/Denver)")),
         async execute(i) {
             const timezone = i.options.getString("timezone") ?? "America/Denver";
@@ -159,23 +159,33 @@ export const magicCommands = [
             }
             const channel = i.options.getChannel("channel", true);
             const role = i.options.getRole("ping_role");
-            const prefix = role ? `<@&${role.id}>\n` : "";
+            const missingRoleNames = new Set();
             await prisma.$transaction([
                 prisma.scheduledPost.deleteMany({
                     where: { guildId: i.guildId, content: { contains: "{{magic_six_daily_" } }
                 }),
-                ...sixDailyMagicPosts.map(post => prisma.scheduledPost.create({
-                    data: {
-                        guildId: i.guildId,
-                        channelId: channel.id,
-                        content: `${prefix}${post.token}`,
-                        cron: `0 ${post.hour} * * *`,
-                        timezone
-                    }
-                }))
+                ...sixDailyMagicPosts.map(post => {
+                    const matchedRoles = [...post.roleNames, "Magic Post Alerts"].map(roleName => {
+                        const matched = i.guild.roles.cache.find(candidate => candidate.name.toLowerCase() === roleName.toLowerCase());
+                        if (!matched)
+                            missingRoleNames.add(roleName);
+                        return matched;
+                    }).filter((matched) => Boolean(matched));
+                    const pingIds = [...new Set([role?.id, ...matchedRoles.map(matched => matched.id)].filter(Boolean))];
+                    const prefix = pingIds.map(roleId => `<@&${roleId}>`).join(" ");
+                    return prisma.scheduledPost.create({
+                        data: {
+                            guildId: i.guildId,
+                            channelId: channel.id,
+                            content: `${prefix ? `${prefix}\n` : ""}${post.token}`,
+                            cron: `0 ${post.hour} * * *`,
+                            timezone
+                        }
+                    });
+                })
             ]);
             await i.reply({
-                content: `Six daily AI magic posts are scheduled in ${channel} at **6 AM, 9 AM, 12 PM, 3 PM, 6 PM, and 9 PM** (${timezone}). Restart or redeploy Nymera once to activate them.`,
+                content: `Six daily AI magic posts are scheduled in ${channel} at **6 AM, 9 AM, 12 PM, 3 PM, 6 PM, and 9 PM** (${timezone}). Each post will ping its matching magic-interest roles.${missingRoleNames.size ? ` Missing roles that could not be connected: **${[...missingRoleNames].join(", ")}**. Run \`/community-role-panels\`, then run this command again.` : ""} Restart or redeploy Nymera once to activate them.`,
                 ephemeral: true
             });
         }

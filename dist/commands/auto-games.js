@@ -9,7 +9,7 @@ export const autoGameCommands = [{
             .addChannelOption(o => o.setName("channel").setDescription("Game channel").setRequired(true).addChannelTypes(ChannelType.GuildText))
             .addIntegerOption(o => o.setName("minutes").setDescription("Minutes between games (default: 90)").setMinValue(15).setMaxValue(1440))
             .addIntegerOption(o => o.setName("answer_minutes").setDescription("Minutes allowed to answer (default: 5)").setMinValue(1).setMaxValue(60))
-            .addRoleOption(o => o.setName("ping_role").setDescription("Optional role to notify for each game")))
+            .addRoleOption(o => o.setName("ping_role").setDescription("Optional extra role to notify for every game")))
             .addSubcommand(s => s.setName("disable").setDescription("Disable automatic games"))
             .addSubcommand(s => s.setName("status").setDescription("Show automatic-game settings"))
             .addSubcommand(s => s.setName("ai-test").setDescription("Test AI-generated trivia without posting a game"))
@@ -41,7 +41,7 @@ export const autoGameCommands = [{
                     }
                 });
                 await i.reply({
-                    content: `Nymera's automatic activity host is enabled in ${channel} every ${minutes} minutes. Activities include trivia, quizzes, polls, word games, encounters, treasure hunts, counting, reaction races, and flash giveaways. Each activity stays open for ${answerMinutes} minute${answerMinutes === 1 ? "" : "s"}${pingRole ? ` and pings ${pingRole}` : ""}. Use \`/auto-games start-now\` to test now.`,
+                    content: `Nymera's automatic activity host is enabled in ${channel} every ${minutes} minutes. Each activity automatically pings its matching game-interest roles${pingRole ? ` plus ${pingRole}` : ""}. Activities include trivia, quizzes, polls, word games, encounters, treasure hunts, counting, reaction races, and flash giveaways. Each activity stays open for ${answerMinutes} minute${answerMinutes === 1 ? "" : "s"}. Use \`/auto-games start-now\` to test now.`,
                     ephemeral: true
                 });
                 return;
@@ -68,7 +68,7 @@ export const autoGameCommands = [{
             const config = await prisma.autoGameConfig.findUnique({ where: { guildId: i.guildId } });
             if (sub === "status") {
                 await i.reply({ content: config
-                        ? `Status: **${config.enabled ? "enabled" : "disabled"}**\nChannel: <#${config.channelId}>\nInterval: ${config.intervalMinutes} minutes\nAnswer window: ${Math.ceil(config.answerSeconds / 60)} minutes\nPing role: ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "none"}\nAI activity generation: **${aiConfigured ? "configured" : "using built-in fallback"}**\nLast game: ${config.lastRunAt ? `<t:${Math.floor(config.lastRunAt.getTime() / 1000)}:R>` : "never"}`
+                        ? `Status: **${config.enabled ? "enabled" : "disabled"}**\nChannel: <#${config.channelId}>\nInterval: ${config.intervalMinutes} minutes\nAnswer window: ${Math.ceil(config.answerSeconds / 60)} minutes\nGame-interest role pings: **automatic**\nExtra ping role: ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "none"}\nAI activity generation: **${aiConfigured ? "configured" : "using built-in fallback"}**\nLast game: ${config.lastRunAt ? `<t:${Math.floor(config.lastRunAt.getTime() / 1000)}:R>` : "never"}`
                         : "Automatic games are not configured.", ephemeral: true });
                 return;
             }
