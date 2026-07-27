@@ -1,4 +1,5 @@
 ﻿import OpenAI from "openai";
+import { zodTextFormat } from "openai/helpers/zod";
 import { env } from "../config.js";
 import { prisma, ensureGuild } from "../database.js";
 import { z } from "zod";
@@ -25,13 +26,6 @@ let autoGameAiStatus: {
   result: client ? "not_tested" : "not_configured",
   attemptedAt: null
 };
-
-function parseJsonObject(text: string) {
-  const first = text.indexOf("{");
-  const last = text.lastIndexOf("}");
-  if (first < 0 || last <= first) throw new Error("AI response did not contain JSON");
-  return JSON.parse(text.slice(first, last + 1)) as unknown;
-}
 
 const gameRoundSchema = z.object({
   title: z.string().min(3).max(80),
@@ -60,7 +54,7 @@ export async function generateAutoGameRound(
     return fallback;
   }
   try {
-    const response = await client.responses.create({
+    const response = await client.responses.parse({
       model: env.OPENAI_MODEL,
       instructions: `${personality}
 Create one fresh, family-friendly Discord multiple-choice trivia or word game.
@@ -70,9 +64,11 @@ Return only JSON with: title, question, choices (exactly four strings), answer (
 Do not repeat or closely paraphrase any of these recent questions:
 ${recentQuestions.slice(0, 20).map(question => `- ${question}`).join("\n") || "- None"}
 Create a genuinely different question with a different answer concept.`,
-      max_output_tokens: 350
+      max_output_tokens: 800,
+      text: { format: zodTextFormat(gameRoundSchema, "game_round") }
     });
-    const generated = gameRoundSchema.parse(parseJsonObject(response.output_text));
+    const generated = response.output_parsed;
+    if (!generated) throw new Error("AI did not return a completed game");
     const normalized = generated.question.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
     const repeated = recentQuestions.some(question =>
       question.toLowerCase().replaceAll(/[^a-z0-9]/g, "") === normalized
@@ -120,7 +116,7 @@ export async function generateAutoActivityContent(input: {
     wordchain: "Create a word-chain or Last Letter round. Include one ordinary English `startWord` of 2-20 letters and explain that each word begins with the previous word's last letter."
   };
   try {
-    const response = await client.responses.create({
+    const response = await client.responses.parse({
       model: env.OPENAI_MODEL,
       instructions: `${personality}
 Create one fresh, family-friendly Discord automatic activity.
@@ -133,9 +129,11 @@ Recent prompts to avoid:
 ${input.recentQuestions?.slice(0, 20).map(question => `- ${question}`).join("\n") || "- None"}
 Fallback structure:
 ${JSON.stringify(input.fallback)}`,
-      max_output_tokens: 400
+      max_output_tokens: 900,
+      text: { format: zodTextFormat(activityContentSchema, "automatic_activity") }
     });
-    const generated = activityContentSchema.parse(parseJsonObject(response.output_text));
+    const generated = response.output_parsed;
+    if (!generated) throw new Error("AI did not return a completed activity");
     if (input.type === "text" && !generated.answers?.length) throw new Error("AI text activity omitted answers");
     if (input.type === "poll" && !generated.choices?.length) throw new Error("AI poll omitted choices");
     if (input.type === "wordchain" && !generated.startWord) throw new Error("AI word chain omitted startWord");
@@ -271,16 +269,17 @@ export function looksReviewable(content: string) {
 export async function createModerationSuggestion(content: string, trigger: string) {
   if (!client) return null;
   try {
-    const response = await client.responses.create({
+    const response = await client.responses.parse({
       model: env.OPENAI_MODEL,
       instructions: `You assist human Discord moderators. Classify only the supplied message.
 Do not make identity inferences. Consider context missing. Never order punishment.
 Return only JSON: risk (low, medium, high), category, reason, recommendation.
 The recommendation must ask staff to review context and may suggest ignore, contact, delete, warn, or urgent escalation.`,
       input: `Heuristic trigger: ${trigger}\nMessage:\n${content.slice(0, 1500)}`,
-      max_output_tokens: 250
+      max_output_tokens: 600,
+      text: { format: zodTextFormat(moderationSchema, "moderation_assessment") }
     });
-    return moderationSchema.parse(parseJsonObject(response.output_text));
+    return response.output_parsed;
   } catch {
     return null;
   }
