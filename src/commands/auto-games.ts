@@ -59,7 +59,7 @@ export const autoGameCommands: Command[] = [{
       await i.deferReply({ ephemeral: true });
       const result = await testAutoGameAi();
       if (result.result === "success") {
-        await i.editReply(`✅ AI-generated trivia is working with the configured OpenAI model. The other activity types continue using Nymera's built-in game logic.`);
+        await i.editReply("✅ AI activity generation is connected to the configured OpenAI model. Trivia, polls, word games, riddles, encounters, treasure hunts, reaction races, counting themes, Hangman, and flash giveaways can all receive fresh AI content.");
       } else if (!result.configured || result.result === "not_configured") {
         await i.editReply("AI-generated trivia is disabled because `OPENAI_API_KEY` is missing. Automatic games still work using built-in questions.");
       } else {
@@ -70,7 +70,7 @@ export const autoGameCommands: Command[] = [{
     const config = await prisma.autoGameConfig.findUnique({ where: { guildId: i.guildId! } });
     if (sub === "status") {
       await i.reply({ content: config
-        ? `Status: **${config.enabled ? "enabled" : "disabled"}**\nChannel: <#${config.channelId}>\nInterval: ${config.intervalMinutes} minutes\nAnswer window: ${Math.ceil(config.answerSeconds / 60)} minutes\nPing role: ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "none"}\nAI-generated trivia: **${aiConfigured ? "configured" : "using built-in fallback"}**\nLast game: ${config.lastRunAt ? `<t:${Math.floor(config.lastRunAt.getTime() / 1000)}:R>` : "never"}`
+        ? `Status: **${config.enabled ? "enabled" : "disabled"}**\nChannel: <#${config.channelId}>\nInterval: ${config.intervalMinutes} minutes\nAnswer window: ${Math.ceil(config.answerSeconds / 60)} minutes\nPing role: ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "none"}\nAI activity generation: **${aiConfigured ? "configured" : "using built-in fallback"}**\nLast game: ${config.lastRunAt ? `<t:${Math.floor(config.lastRunAt.getTime() / 1000)}:R>` : "never"}`
         : "Automatic games are not configured.", ephemeral: true });
       return;
     }

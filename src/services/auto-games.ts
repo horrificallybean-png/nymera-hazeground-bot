@@ -6,7 +6,7 @@ import {
 } from "discord.js";
 import { prisma } from "../database.js";
 import { logger } from "../logger.js";
-import { generateAutoGameRound } from "./ai.js";
+import { generateAutoActivityContent, generateAutoGameRound } from "./ai.js";
 import { secureInt } from "./games.js";
 import { discordArtwork } from "./assets.js";
 
@@ -37,6 +37,7 @@ type SimpleActivity = {
   game: string;
   title: string;
   question: string;
+  startWord?: string;
 };
 type Activity = ChoiceActivity | TextActivity | PollActivity | SimpleActivity;
 
@@ -294,7 +295,7 @@ async function hostCounting(channel: TextChannel, activity: SimpleActivity, guil
 }
 
 async function hostWordChain(channel: TextChannel, activity: SimpleActivity, guildId: string, roleId: string | null, seconds: number) {
-  const startWord = activity.game === "auto_last_letter" ? "moon" : "raven";
+  const startWord = activity.startWord ?? (activity.game === "auto_last_letter" ? "moon" : "raven");
   const start = await channel.send({
     content: `${prefix(roleId, activity.title)}\n${activity.question}`,
     allowedMentions: { roles: roleId ? [roleId] : [] },
@@ -356,7 +357,34 @@ export async function launchAutoGame(client: Client, guildId: string): Promise<A
       reason: `Nymera is missing these permissions in ${channel}: **${missing.join(", ")}**. Open the channel settings and allow them for Nymera's bot role.`
     };
   }
-  const activity = activities[config.nextGameIndex % activities.length]!;
+  const baseActivity = activities[config.nextGameIndex % activities.length]!;
+  const recent = await prisma.autoGameHistory.findMany({
+    where: { guildId },
+    orderBy: { createdAt: "desc" },
+    take: 20
+  });
+  let activity: Activity = baseActivity;
+  if (baseActivity.type !== "choice") {
+    const generated = await generateAutoActivityContent({
+      game: baseActivity.game,
+      type: baseActivity.type,
+      fallback: {
+        title: baseActivity.title,
+        question: baseActivity.question,
+        choices: baseActivity.type === "poll" ? [...baseActivity.choices] : undefined,
+        answers: baseActivity.type === "text" ? [...baseActivity.answers] : undefined,
+        startWord: baseActivity.type === "wordchain" ? baseActivity.startWord : undefined
+      },
+      recentQuestions: recent.map(entry => entry.question)
+    });
+    if (baseActivity.type === "text") {
+      activity = { ...baseActivity, title: generated.title, question: generated.question, answers: generated.answers ?? baseActivity.answers };
+    } else if (baseActivity.type === "poll") {
+      activity = { ...baseActivity, title: generated.title, question: generated.question, choices: generated.choices ?? baseActivity.choices };
+    } else {
+      activity = { ...baseActivity, title: generated.title, question: generated.question, startWord: generated.startWord ?? baseActivity.startWord };
+    }
+  }
   activeGuilds.add(guildId);
   try {
     await prisma.autoGameConfig.update({
@@ -380,6 +408,9 @@ export async function launchAutoGame(client: Client, guildId: string): Promise<A
       await hostCounting(channel, activity, guildId, config.pingRoleId, config.answerSeconds);
     } else {
       await hostWordChain(channel, activity, guildId, config.pingRoleId, config.answerSeconds);
+    }
+    if (activity.type !== "choice") {
+      await prisma.autoGameHistory.create({ data: { guildId, game: activity.game, question: activity.question } });
     }
     const oldHistory = await prisma.autoGameHistory.findMany({
       where: { guildId }, orderBy: { createdAt: "desc" }, skip: 50, select: { id: true }

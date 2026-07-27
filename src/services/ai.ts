@@ -40,6 +40,16 @@ const gameRoundSchema = z.object({
   answer: z.number().int().min(0).max(3)
 });
 
+const activityContentSchema = z.object({
+  title: z.string().min(3).max(80),
+  question: z.string().min(8).max(500),
+  choices: z.array(z.string().min(1).max(80)).min(2).max(4).optional(),
+  answers: z.array(z.string().min(1).max(80)).min(1).max(5).optional(),
+  startWord: z.string().regex(/^[a-zA-Z]{2,20}$/).optional()
+});
+
+export type DynamicActivityContent = z.infer<typeof activityContentSchema>;
+
 export async function generateAutoGameRound(
   topic: string,
   fallback: { title: string; question: string; choices: readonly string[]; answer: number },
@@ -88,6 +98,57 @@ export async function testAutoGameAi() {
     answer: 0
   }, [marker]);
   return { ...autoGameAiStatus, configured: aiConfigured };
+}
+
+export async function generateAutoActivityContent(input: {
+  game: string;
+  type: "text" | "poll" | "race" | "treasure" | "giveaway" | "counting" | "wordchain";
+  fallback: DynamicActivityContent;
+  recentQuestions?: readonly string[];
+}) {
+  if (!client) {
+    autoGameAiStatus = { result: "not_configured", attemptedAt: new Date() };
+    return input.fallback;
+  }
+  const typeRules: Record<typeof input.type, string> = {
+    text: "Create a word, Hangman, emoji-guess, math-rush, or riddle round. Include `answers` with every accepted exact answer. The answer must be unambiguous.",
+    poll: "Create a friendly opinion poll with 2-4 short `choices`. It has no correct answer and must not request sensitive disclosure.",
+    race: "Create a short magical encounter or reaction-race scene with a clear button-call-to-action. Do not include choices or answers.",
+    treasure: "Create a short three-chest treasure-hunt scene. Do not reveal which chest wins and do not include choices or answers.",
+    giveaway: "Create a short flash-giveaway theme. The fixed prize is 500 Spellmarks. Do not change the prize or include choices.",
+    counting: "Create atmospheric wording for a cooperative count from exactly 1 to 10. Preserve the rule that one member cannot post twice in a row.",
+    wordchain: "Create a word-chain or Last Letter round. Include one ordinary English `startWord` of 2-20 letters and explain that each word begins with the previous word's last letter."
+  };
+  try {
+    const response = await client.responses.create({
+      model: env.OPENAI_MODEL,
+      instructions: `${personality}
+Create one fresh, family-friendly Discord automatic activity.
+${typeRules[input.type]}
+Keep the same activity type and make all rules reliable and easy to understand.
+Return only JSON with title, question, and only the applicable optional fields: choices, answers, startWord.`,
+      input: `Activity key: ${input.game}
+Type: ${input.type}
+Recent prompts to avoid:
+${input.recentQuestions?.slice(0, 20).map(question => `- ${question}`).join("\n") || "- None"}
+Fallback structure:
+${JSON.stringify(input.fallback)}`,
+      max_output_tokens: 400
+    });
+    const generated = activityContentSchema.parse(parseJsonObject(response.output_text));
+    if (input.type === "text" && !generated.answers?.length) throw new Error("AI text activity omitted answers");
+    if (input.type === "poll" && !generated.choices?.length) throw new Error("AI poll omitted choices");
+    if (input.type === "wordchain" && !generated.startWord) throw new Error("AI word chain omitted startWord");
+    autoGameAiStatus = { result: "success", attemptedAt: new Date() };
+    return generated;
+  } catch (error) {
+    autoGameAiStatus = {
+      result: "failed",
+      attemptedAt: new Date(),
+      error: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300)
+    };
+    return input.fallback;
+  }
 }
 
 export async function generateDynamicScheduledContent(template: string, fallback: string) {
