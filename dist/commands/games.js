@@ -13,7 +13,7 @@ const checkCooldown = (guildId, userId) => {
         cooldowns.set(key, now + 5_000);
     return wait;
 };
-export const gameCommands = [
+const allGameCommands = [
     {
         data: new SlashCommandBuilder().setName("coinflip").setDescription("Wager on a secure coin flip")
             .addStringOption(o => o.setName("choice").setDescription("Heads or tails").setRequired(true)
@@ -146,8 +146,15 @@ export const gameCommands = [
     },
     {
         data: new SlashCommandBuilder().setName("game-stats").setDescription("View a member's game statistics")
-            .addUserOption(o => o.setName("user").setDescription("Member")),
+            .addStringOption(o => o.setName("view").setDescription("Statistics view").addChoices({ name: "Member statistics", value: "member" }, { name: "Server leaderboard", value: "leaderboard" }))
+            .addUserOption(o => o.setName("user").setDescription("Member for the member-statistics view")),
         async execute(i) {
+            if (i.options.getString("view") === "leaderboard") {
+                const grouped = await prisma.gameStat.groupBy({ by: ["userId"], where: { guildId: i.guildId }, _sum: { won: true, earned: true }, orderBy: { _sum: { won: "desc" } }, take: 10 });
+                await i.reply({ embeds: [new EmbedBuilder().setColor(0x6f42c1).setTitle("Game Leaderboard")
+                            .setDescription(grouped.map((x, n) => `**${n + 1}.** ${userMention(x.userId)} — ${x._sum.won ?? 0} wins • ${(x._sum.earned ?? 0) >= 0 ? "+" : ""}${x._sum.earned ?? 0}`).join("\n") || "No games played.")] });
+                return;
+            }
             const user = i.options.getUser("user") ?? i.user;
             const stats = await prisma.gameStat.findMany({ where: { guildId: i.guildId, userId: user.id }, orderBy: { played: "desc" } });
             await i.reply({ embeds: [new EmbedBuilder().setColor(0x6f42c1).setTitle(`${user.username}'s Game Stats`)
@@ -163,3 +170,4 @@ export const gameCommands = [
         }
     }
 ];
+export const gameCommands = allGameCommands.filter(command => command.data.name !== "game-leaderboard");

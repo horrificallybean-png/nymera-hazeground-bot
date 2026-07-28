@@ -1,5 +1,4 @@
 import { EmbedBuilder, SlashCommandBuilder, time, userMention } from "discord.js";
-const startedAt = new Date();
 export const utilityCommands = [
     {
         data: new SlashCommandBuilder().setName("ping").setDescription("Check Nymera's responsiveness"),
@@ -49,8 +48,4 @@ export const utilityCommands = [
         data: new SlashCommandBuilder().setName("botinfo").setDescription("Show bot information"),
         async execute(i) { await i.reply("Nymera Hazeground Phase 5 • Foundation, moderation, AI, economy, games, magic lore, and community systems."); }
     },
-    {
-        data: new SlashCommandBuilder().setName("uptime").setDescription("Show process uptime"),
-        async execute(i) { await i.reply(`Awake since ${time(startedAt, "R")}.`); }
-    }
 ];
