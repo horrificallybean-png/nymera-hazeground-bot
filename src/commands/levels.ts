@@ -7,6 +7,21 @@ import { accountKey, applyLevelRewards, getAccount, levelForXp } from "../servic
 
 const xpForLevel = (level: number) => level * level * 100;
 
+const themedLevelRoles = [
+  { level: 5, name: "🌫️ Haze Wanderer", color: 0x6b7280 },
+  { level: 10, name: "🕯️ Candle Keeper", color: 0xf59e0b },
+  { level: 15, name: "🌿 Hedge Witch", color: 0x65a30d },
+  { level: 20, name: "🔮 Crystal Seer", color: 0xa855f7 },
+  { level: 25, name: "📜 Grimoire Keeper", color: 0x92400e },
+  { level: 30, name: "🐦‍⬛ Raven Familiar", color: 0x374151 },
+  { level: 40, name: "🌙 Moonlit Mystic", color: 0x818cf8 },
+  { level: 50, name: "🧙 Coven Adept", color: 0x7e22ce },
+  { level: 60, name: "💀 Bone Conjurer", color: 0xd1d5db },
+  { level: 75, name: "🩸 Blood Moon Witch", color: 0xb91c1c },
+  { level: 90, name: "✨ Arcane Elder", color: 0xc084fc },
+  { level: 100, name: "👑 Sovereign of the Haze", color: 0x84cc16 }
+] as const;
+
 export const levelCommands: Command[] = [
   {
     data: new SlashCommandBuilder().setName("rank").setDescription("View a member's level and XP")
@@ -78,9 +93,48 @@ export const levelCommands: Command[] = [
         .addRoleOption(o => o.setName("role").setDescription("Role to award").setRequired(true)))
       .addSubcommand(s => s.setName("remove").setDescription("Remove a level reward")
         .addIntegerOption(o => o.setName("level").setDescription("Reward level").setRequired(true).setMinValue(1).setMaxValue(1000)))
+      .addSubcommand(s => s.setName("create-themed").setDescription("Create and connect Nymera's complete themed level roles"))
       .addSubcommand(s => s.setName("list").setDescription("List all level rewards")),
     async execute(i) {
       const sub = i.options.getSubcommand();
+      if (sub === "create-themed") {
+        const botMember = i.guild!.members.me;
+        if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
+          return void await i.reply({
+            content: "I need the **Manage Roles** permission before I can create level roles.",
+            ephemeral: true
+          });
+        }
+        await i.deferReply({ ephemeral: true });
+        const connected: string[] = [];
+        for (const themed of themedLevelRoles) {
+          let role = i.guild!.roles.cache.find(
+            candidate => candidate.name.toLowerCase() === themed.name.toLowerCase()
+          );
+          role ??= await i.guild!.roles.create({
+            name: themed.name,
+            color: themed.color,
+            mentionable: false,
+            reason: `Nymera themed level reward for level ${themed.level}`
+          });
+          if (role.position >= botMember.roles.highest.position) {
+            await i.editReply(
+              `I created some roles, but ${role} is above my highest role. Move Nymera's role above every level role, then run this command again.`
+            );
+            return;
+          }
+          await prisma.levelReward.upsert({
+            where: { guildId_level: { guildId: i.guildId!, level: themed.level } },
+            update: { roleId: role.id },
+            create: { guildId: i.guildId!, level: themed.level, roleId: role.id }
+          });
+          connected.push(`Level **${themed.level}** — ${role}`);
+        }
+        await i.editReply(
+          `Created or reconnected all **${connected.length} themed level roles**:\n${connected.join("\n")}\n\nKeep Nymera's bot role above these roles. Use \`/level-role list\` to verify them.`
+        );
+        return;
+      }
       if (sub === "list") {
         const rewards = await prisma.levelReward.findMany({
           where: { guildId: i.guildId! },
