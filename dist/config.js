@@ -6,6 +6,8 @@ const schema = z.object({
     DISCORD_GUILD_ID: z.string().trim().optional(),
     OPENAI_API_KEY: z.string().optional(),
     OPENAI_MODEL: z.string().default("gpt-5-mini"),
+    TWITCH_CLIENT_ID: z.string().trim().optional(),
+    TWITCH_CLIENT_SECRET: z.string().trim().optional(),
     LOG_LEVEL: z.string().default("info"),
     DEFAULT_TIMEZONE: z.string().default("America/Denver")
 });

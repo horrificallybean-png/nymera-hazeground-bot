@@ -16,6 +16,7 @@ import { startAutoGameMonitor } from "../services/auto-games.js";
 import { startReminderMonitor } from "../services/reminders.js";
 import { startBackupMonitor } from "../services/backups.js";
 import { startConversationStarterMonitor } from "../services/conversation-starters.js";
+import { startTwitchAlertMonitor } from "../services/twitch-alerts.js";
 const xpCooldowns = new Map();
 const autoReplyCooldowns = new Map();
 async function sendAiModerationReview(message, trigger) {
@@ -76,6 +77,7 @@ export function registerEvents(client) {
         startReminderMonitor(client);
         startBackupMonitor();
         startConversationStarterMonitor(client);
+        startTwitchAlertMonitor(client);
         for (const guild of ready.guilds.cache.values())
             await seedGuildEconomy(guild.id);
     });

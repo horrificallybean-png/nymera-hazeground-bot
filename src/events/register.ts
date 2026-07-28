@@ -16,6 +16,7 @@ import { startAutoGameMonitor } from "../services/auto-games.js";
 import { startReminderMonitor } from "../services/reminders.js";
 import { startBackupMonitor } from "../services/backups.js";
 import { startConversationStarterMonitor } from "../services/conversation-starters.js";
+import { startTwitchAlertMonitor } from "../services/twitch-alerts.js";
 
 const xpCooldowns = new Map<string, number>();
 const autoReplyCooldowns = new Map<string, number>();
@@ -77,6 +78,7 @@ export function registerEvents(client: Client) {
     startReminderMonitor(client);
     startBackupMonitor();
     startConversationStarterMonitor(client);
+    startTwitchAlertMonitor(client);
     for (const guild of ready.guilds.cache.values()) await seedGuildEconomy(guild.id);
   });
 

@@ -84,6 +84,17 @@ model GeneratedContentHistory {
   @@index([guildId, kind, createdAt])
 }
 
+model TwitchAlertConfig {
+  guildId      String   @id
+  channelId    String
+  twitchLogin  String
+  enabled      Boolean  @default(true)
+  lastStreamId String?
+  lastCheckedAt DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
 model AiUserMemory {
   guildId  String
   userId   String

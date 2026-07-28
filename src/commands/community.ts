@@ -6,6 +6,7 @@ import type { Command } from "../types.js";
 import { ensureGuild, prisma } from "../database.js";
 import { endGiveaway, giveawayEmbed, parseDuration } from "../services/community.js";
 import { discordAsset } from "../services/assets.js";
+import { checkTwitchAlert, twitchConfigured } from "../services/twitch-alerts.js";
 
 const communityRolePanels = [
   {
@@ -84,6 +85,7 @@ const communityRolePanels = [
       ["Giveaway Alerts", "🎁 Giveaways"],
       ["Game Alerts", "🎮 Game Alerts"],
       ["Magic Post Alerts", "🔮 Magic Posts"],
+      ["Social Media Alerts", "📱 Social Media"],
       ["Wellness Check-In Alerts", "🌿 Wellness"],
       ["Server Update Alerts", "🛠️ Server Updates"]
     ]
@@ -282,6 +284,131 @@ export const communityCommands: Command[] = [
         create: { guildId: i.guildId!, channelId: channel.id, messageId, emoji, roleId: role.id }
       });
       await i.reply({ content: `Reaction role saved for ${role}.`, ephemeral: true });
+    }
+  },
+  {
+    data: new SlashCommandBuilder().setName("social-media-alert").setDescription("Announce a new social media post")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      .addChannelOption(o => o.setName("channel").setDescription("Where Nymera should post the alert").setRequired(true).addChannelTypes(ChannelType.GuildText))
+      .addStringOption(o => o.setName("platform").setDescription("Social platform").setRequired(true).addChoices(
+        { name: "Instagram", value: "Instagram" },
+        { name: "TikTok", value: "TikTok" },
+        { name: "YouTube", value: "YouTube" },
+        { name: "Twitch", value: "Twitch" },
+        { name: "Bluesky", value: "Bluesky" },
+        { name: "Facebook", value: "Facebook" },
+        { name: "Other", value: "Social Media" }
+      ))
+      .addStringOption(o => o.setName("link").setDescription("Direct link to the new post").setRequired(true).setMaxLength(1000))
+      .addStringOption(o => o.setName("message").setDescription("Optional announcement text").setMaxLength(1000))
+      .addStringOption(o => o.setName("image_url").setDescription("Optional direct HTTPS preview-image URL").setMaxLength(1000)),
+    async execute(i) {
+      const channel = i.options.getChannel("channel", true);
+      if (!("send" in channel)) return;
+      const link = i.options.getString("link", true).trim();
+      const imageUrl = i.options.getString("image_url")?.trim();
+      const isHttpUrl = (value: string) => {
+        try {
+          const parsed = new URL(value);
+          return parsed.protocol === "https:" || parsed.protocol === "http:";
+        } catch {
+          return false;
+        }
+      };
+      if (!isHttpUrl(link)) {
+        return void await i.reply({ content: "The post link must begin with `https://` or `http://`.", ephemeral: true });
+      }
+      if (imageUrl && (!isHttpUrl(imageUrl) || !imageUrl.startsWith("https://"))) {
+        return void await i.reply({ content: "The optional image URL must be a direct `https://` link.", ephemeral: true });
+      }
+      const platform = i.options.getString("platform", true);
+      const message = i.options.getString("message")?.trim() || "A new post has appeared beyond the haze. Visit the link to see it.";
+      const alertRole = i.guild!.roles.cache.find(role => role.name.toLowerCase() === "social media alerts");
+      const files = imageUrl ? [] : discordAsset("roles-notifications-banner.png");
+      const embed = new EmbedBuilder()
+        .setColor(0x9b73d1)
+        .setTitle(`📱 New ${platform} Post`)
+        .setDescription(message)
+        .setURL(link)
+        .addFields({ name: "View the post", value: `[Open on ${platform}](${link})` })
+        .setTimestamp()
+        .setFooter({ text: "Spellbound Hazeground • Social Media Alert" });
+      if (imageUrl) embed.setImage(imageUrl);
+      else if (files.length) embed.setImage("attachment://roles-notifications-banner.png");
+      await channel.send({
+        content: alertRole ? `<@&${alertRole.id}>` : undefined,
+        embeds: [embed],
+        files,
+        allowedMentions: { roles: alertRole ? [alertRole.id] : [] }
+      });
+      await i.reply({
+        content: `Social media alert posted in ${channel}.${alertRole ? ` ${alertRole} was notified.` : " The **Social Media Alerts** role was not found; run `/community-role-panels` to create it."}`,
+        ephemeral: true
+      });
+    }
+  },
+  {
+    data: new SlashCommandBuilder().setName("twitch-alerts").setDescription("Configure automatic Twitch live alerts")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      .addSubcommand(s => s.setName("setup").setDescription("Watch a Twitch channel and announce when it goes live")
+        .addChannelOption(o => o.setName("channel").setDescription("Discord channel for live alerts").setRequired(true).addChannelTypes(ChannelType.GuildText))
+        .addStringOption(o => o.setName("twitch_username").setDescription("Twitch channel username, without the URL").setRequired(true).setMaxLength(25)))
+      .addSubcommand(s => s.setName("status").setDescription("Show the Twitch live-alert configuration"))
+      .addSubcommand(s => s.setName("test-now").setDescription("Check Twitch now and post an alert if the channel is live"))
+      .addSubcommand(s => s.setName("disable").setDescription("Disable Twitch live alerts")),
+    async execute(i) {
+      const subcommand = i.options.getSubcommand();
+      if (subcommand === "setup") {
+        if (!twitchConfigured) {
+          return void await i.reply({
+            content: "Twitch credentials are missing. Add `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` to Railway, then redeploy.",
+            ephemeral: true
+          });
+        }
+        const twitchLogin = i.options.getString("twitch_username", true).trim().toLowerCase();
+        if (!/^[a-z0-9_]{3,25}$/.test(twitchLogin)) {
+          return void await i.reply({ content: "Enter only the Twitch username, using letters, numbers, or underscores.", ephemeral: true });
+        }
+        const channel = i.options.getChannel("channel", true);
+        await prisma.twitchAlertConfig.upsert({
+          where: { guildId: i.guildId! },
+          update: { channelId: channel.id, twitchLogin, enabled: true, lastStreamId: null },
+          create: { guildId: i.guildId!, channelId: channel.id, twitchLogin }
+        });
+        await i.reply({
+          content: `Nymera will check **twitch.tv/${twitchLogin}** every two minutes and announce new live streams in ${channel}. Members with **Social Media Alerts** will be pinged.`,
+          ephemeral: true
+        });
+        return;
+      }
+      if (subcommand === "disable") {
+        await prisma.twitchAlertConfig.updateMany({ where: { guildId: i.guildId! }, data: { enabled: false } });
+        await i.reply({ content: "Automatic Twitch live alerts are disabled.", ephemeral: true });
+        return;
+      }
+      const config = await prisma.twitchAlertConfig.findUnique({ where: { guildId: i.guildId! } });
+      if (subcommand === "status") {
+        await i.reply({
+          content: config
+            ? `Status: **${config.enabled ? "enabled" : "disabled"}**\nTwitch channel: **${config.twitchLogin}**\nDiscord channel: <#${config.channelId}>\nAPI credentials: **${twitchConfigured ? "configured" : "missing"}**\nLast check: ${config.lastCheckedAt ? `<t:${Math.floor(config.lastCheckedAt.getTime() / 1000)}:R>` : "not yet"}`
+            : "Twitch live alerts are not configured.",
+          ephemeral: true
+        });
+        return;
+      }
+      if (!config?.enabled) {
+        return void await i.reply({ content: "Run `/twitch-alerts setup` first.", ephemeral: true });
+      }
+      await i.deferReply({ ephemeral: true });
+      try {
+        const result = await checkTwitchAlert(i.client, i.guildId!, true);
+        await i.editReply(result.live
+          ? "The Twitch channel is live, and Nymera posted a test alert."
+          : result.reason ?? "The Twitch channel is currently offline.");
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        await i.editReply(`The Twitch check failed: \`${reason.slice(0, 500)}\``);
+      }
     }
   },
   {
