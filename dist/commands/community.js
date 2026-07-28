@@ -145,6 +145,66 @@ function buttonRows(entries) {
     }
     return rows;
 }
+export async function createCommunityRolePanels(guild, channel, reason) {
+    const botMember = guild.members.me;
+    if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        throw new Error("Nymera needs the Manage Roles permission first.");
+    }
+    let createdRoles = 0;
+    let reusedRoles = 0;
+    for (const panel of communityRolePanels) {
+        const entries = [];
+        for (const [roleName, label] of panel.roles) {
+            let role = guild.roles.cache.find(candidate => candidate.name.toLowerCase() === roleName.toLowerCase());
+            if (role) {
+                if (role.managed || role.position >= botMember.roles.highest.position) {
+                    throw new Error(`Nymera cannot manage ${role.name}. Move Nymera's bot role above that role and try again.`);
+                }
+                reusedRoles++;
+            }
+            else {
+                role = await guild.roles.create({
+                    name: roleName,
+                    color: panel.color,
+                    mentionable: false,
+                    reason
+                });
+                createdRoles++;
+            }
+            entries.push({ roleId: role.id, label });
+        }
+        const files = discordAsset(panel.image);
+        const embed = new EmbedBuilder()
+            .setColor(panel.color)
+            .setTitle(panel.title)
+            .setDescription(panel.description);
+        if (files.length)
+            embed.setImage(`attachment://${panel.image}`);
+        const message = await channel.send({
+            embeds: [embed],
+            components: buttonRows(entries),
+            files
+        });
+        await prisma.$transaction(entries.map(entry => prisma.reactionRole.upsert({
+            where: {
+                guildId_messageId_emoji: {
+                    guildId: guild.id,
+                    messageId: message.id,
+                    emoji: `button:${entry.roleId}`
+                }
+            },
+            update: { roleId: entry.roleId, channelId: channel.id },
+            create: {
+                guildId: guild.id,
+                channelId: channel.id,
+                messageId: message.id,
+                emoji: `button:${entry.roleId}`,
+                roleId: entry.roleId
+            }
+        })));
+    }
+    return { createdRoles, reusedRoles };
+}
 export const communityCommands = [
     {
         data: new SlashCommandBuilder().setName("ticket").setDescription("Open or manage a support ticket")
@@ -493,60 +553,7 @@ export const communityCommands = [
                 return void await i.reply({ content: "Nymera needs the **Manage Roles** permission first.", ephemeral: true });
             }
             await i.deferReply({ ephemeral: true });
-            let createdRoles = 0;
-            let reusedRoles = 0;
-            for (const panel of communityRolePanels) {
-                const entries = [];
-                for (const [roleName, label] of panel.roles) {
-                    let role = i.guild.roles.cache.find(candidate => candidate.name.toLowerCase() === roleName.toLowerCase());
-                    if (role) {
-                        if (role.managed || role.position >= botMember.roles.highest.position) {
-                            await i.editReply(`I found **${role.name}**, but I cannot manage it. Move Nymera's bot role above that role and run the command again.`);
-                            return;
-                        }
-                        reusedRoles++;
-                    }
-                    else {
-                        role = await i.guild.roles.create({
-                            name: roleName,
-                            color: panel.color,
-                            mentionable: false,
-                            reason: `Community role panel created by ${i.user.tag}`
-                        });
-                        createdRoles++;
-                    }
-                    entries.push({ roleId: role.id, label });
-                }
-                const files = discordAsset(panel.image);
-                const embed = new EmbedBuilder()
-                    .setColor(panel.color)
-                    .setTitle(panel.title)
-                    .setDescription(panel.description);
-                if (files.length)
-                    embed.setImage(`attachment://${panel.image}`);
-                const message = await channel.send({
-                    embeds: [embed],
-                    components: buttonRows(entries),
-                    files
-                });
-                await prisma.$transaction(entries.map(entry => prisma.reactionRole.upsert({
-                    where: {
-                        guildId_messageId_emoji: {
-                            guildId: i.guildId,
-                            messageId: message.id,
-                            emoji: `button:${entry.roleId}`
-                        }
-                    },
-                    update: { roleId: entry.roleId, channelId: channel.id },
-                    create: {
-                        guildId: i.guildId,
-                        channelId: channel.id,
-                        messageId: message.id,
-                        emoji: `button:${entry.roleId}`,
-                        roleId: entry.roleId
-                    }
-                })));
-            }
+            const { createdRoles, reusedRoles } = await createCommunityRolePanels(i.guild, channel, `Community role panel created by ${i.user.tag}`);
             await i.editReply(`Eight image role panels were created in ${channel}. Created **${createdRoles}** roles and reused **${reusedRoles}** existing roles.`);
         }
     },

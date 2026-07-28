@@ -1,5 +1,5 @@
 import {
-  ChannelType, EmbedBuilder, PermissionFlagsBits, SlashCommandBuilder, userMention
+  ChannelType, EmbedBuilder, PermissionFlagsBits, SlashCommandBuilder, userMention, type Guild
 } from "discord.js";
 import type { Command } from "../types.js";
 import { ensureGuild, prisma } from "../database.js";
@@ -21,6 +21,33 @@ const themedLevelRoles = [
   { level: 90, name: "✨ Arcane Elder", color: 0xc084fc },
   { level: 100, name: "👑 Sovereign of the Haze", color: 0x84cc16 }
 ] as const;
+
+export async function createThemedLevelRoles(guild: Guild, reason: string) {
+  const botMember = guild.members.me;
+  if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
+    throw new Error("Nymera needs the Manage Roles permission before creating level roles.");
+  }
+  const connected: { level: number; roleId: string }[] = [];
+  for (const themed of themedLevelRoles) {
+    let role = guild.roles.cache.find(candidate => candidate.name.toLowerCase() === themed.name.toLowerCase());
+    role ??= await guild.roles.create({
+      name: themed.name,
+      color: themed.color,
+      mentionable: false,
+      reason
+    });
+    if (role.position >= botMember.roles.highest.position) {
+      throw new Error(`Move Nymera's role above ${role.name}, then run the setup again.`);
+    }
+    await prisma.levelReward.upsert({
+      where: { guildId_level: { guildId: guild.id, level: themed.level } },
+      update: { roleId: role.id },
+      create: { guildId: guild.id, level: themed.level, roleId: role.id }
+    });
+    connected.push({ level: themed.level, roleId: role.id });
+  }
+  return connected;
+}
 
 export const levelCommands: Command[] = [
   {
@@ -106,32 +133,12 @@ export const levelCommands: Command[] = [
           });
         }
         await i.deferReply({ ephemeral: true });
-        const connected: string[] = [];
-        for (const themed of themedLevelRoles) {
-          let role = i.guild!.roles.cache.find(
-            candidate => candidate.name.toLowerCase() === themed.name.toLowerCase()
-          );
-          role ??= await i.guild!.roles.create({
-            name: themed.name,
-            color: themed.color,
-            mentionable: false,
-            reason: `Nymera themed level reward for level ${themed.level}`
-          });
-          if (role.position >= botMember.roles.highest.position) {
-            await i.editReply(
-              `I created some roles, but ${role} is above my highest role. Move Nymera's role above every level role, then run this command again.`
-            );
-            return;
-          }
-          await prisma.levelReward.upsert({
-            where: { guildId_level: { guildId: i.guildId!, level: themed.level } },
-            update: { roleId: role.id },
-            create: { guildId: i.guildId!, level: themed.level, roleId: role.id }
-          });
-          connected.push(`Level **${themed.level}** — ${role}`);
-        }
+        const connected = await createThemedLevelRoles(
+          i.guild!,
+          `Nymera themed level rewards created by ${i.user.tag}`
+        );
         await i.editReply(
-          `Created or reconnected all **${connected.length} themed level roles**:\n${connected.join("\n")}\n\nKeep Nymera's bot role above these roles. Use \`/level-role list\` to verify them.`
+          `Created or reconnected all **${connected.length} themed level roles**:\n${connected.map(entry => `Level **${entry.level}** — <@&${entry.roleId}>`).join("\n")}\n\nKeep Nymera's bot role above these roles. Use \`/level-role list\` to verify them.`
         );
         return;
       }

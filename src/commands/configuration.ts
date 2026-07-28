@@ -1,14 +1,17 @@
 import {
-  ChannelType,
+  ChannelType, type CategoryChannel,
   EmbedBuilder,
   PermissionFlagsBits,
   SlashCommandBuilder,
   channelMention,
-  roleMention
+  roleMention,
+  type TextChannel
 } from "discord.js";
 import cron from "node-cron";
 import type { Command } from "../types.js";
 import { ensureGuild, prisma } from "../database.js";
+import { createCommunityRolePanels } from "./community.js";
+import { createThemedLevelRoles } from "./levels.js";
 
 const mentalHealthMarker = "🌿 **Gentle Mental Health Check-In**";
 
@@ -48,21 +51,295 @@ function validTimezone(timezone: string) {
   }
 }
 
+const completeMagicSchedule = [
+  { hour: 6, token: "{{magic_six_daily_dawn}}", roleNames: ["Tarot & Oracle", "Divination"] },
+  { hour: 9, token: "{{magic_six_daily_morning}}", roleNames: ["Herbal Lore"] },
+  { hour: 12, token: "{{magic_six_daily_midday}}", roleNames: ["Folklore", "Mythology"] },
+  { hour: 15, token: "{{magic_six_daily_afternoon}}", roleNames: ["Crystals", "Spellcraft"] },
+  { hour: 18, token: "{{magic_six_daily_evening}}", roleNames: ["Astrology", "Moon & Cosmos"] },
+  { hour: 21, token: "{{magic_six_daily_night}}", roleNames: ["Witchcraft History", "Spellcraft"] }
+] as const;
+
+async function findOrCreateCategory(
+  i: Parameters<Command["execute"]>[0],
+  name: string,
+  isPrivate = false
+) {
+  const guild = i.guild!;
+  let category = guild.channels.cache.find(
+    candidate => candidate.type === ChannelType.GuildCategory && candidate.name === name
+  ) as CategoryChannel | undefined;
+  category ??= await guild.channels.create({
+    name,
+    type: ChannelType.GuildCategory,
+    permissionOverwrites: isPrivate ? [
+      { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: i.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
+    ] : undefined,
+    reason: `Complete Nymera setup requested by ${i.user.tag}`
+  });
+  return category;
+}
+
+async function findOrCreateTextChannel(
+  i: Parameters<Command["execute"]>[0],
+  category: CategoryChannel,
+  name: string,
+  topic: string,
+  legacyNames: readonly string[] = []
+) {
+  const guild = i.guild!;
+  let channel = guild.channels.cache.find(
+    candidate => candidate.type === ChannelType.GuildText &&
+      (candidate.name === name || legacyNames.includes(candidate.name))
+  ) as TextChannel | undefined;
+  if (channel) {
+    if (channel.name !== name || channel.parentId !== category.id || channel.topic !== topic) {
+      await channel.edit({
+        name,
+        parent: category.id,
+        topic,
+        reason: `Nymera horror-theme upgrade requested by ${i.user.tag}`
+      });
+    }
+  } else {
+    channel = await guild.channels.create({
+      name,
+      type: ChannelType.GuildText,
+      parent: category.id,
+      topic,
+      reason: `Complete Nymera setup requested by ${i.user.tag}`
+    });
+  }
+  return channel;
+}
+
+async function findOrCreateVoiceChannel(
+  i: Parameters<Command["execute"]>[0],
+  category: CategoryChannel,
+  name: string,
+  legacyNames: readonly string[] = []
+) {
+  const guild = i.guild!;
+  const channel = guild.channels.cache.find(
+    candidate => candidate.type === ChannelType.GuildVoice &&
+      (candidate.name === name || legacyNames.includes(candidate.name))
+  );
+  if (channel?.type === ChannelType.GuildVoice) {
+    if (channel.name !== name || channel.parentId !== category.id) {
+      await channel.edit({
+        name,
+        parent: category.id,
+        reason: `Nymera horror-theme upgrade requested by ${i.user.tag}`
+      });
+    }
+    return channel;
+  }
+  return guild.channels.create({
+    name,
+    type: ChannelType.GuildVoice,
+    parent: category.id,
+    reason: `Complete Nymera setup requested by ${i.user.tag}`
+  });
+}
+
 export const configurationCommands: Command[] = [
   {
     data: new SlashCommandBuilder().setName("setup").setDescription("Configure Nymera's server features").setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-      .addChannelOption(o => o.setName("welcome_channel").setDescription("Welcome messages").addChannelTypes(ChannelType.GuildText))
-      .addChannelOption(o => o.setName("goodbye_channel").setDescription("Goodbye messages").addChannelTypes(ChannelType.GuildText))
-      .addChannelOption(o => o.setName("log_channel").setDescription("Audit logs").addChannelTypes(ChannelType.GuildText))
-      .addRoleOption(o => o.setName("auto_role").setDescription("Role assigned on join"))
-      .addChannelOption(o => o.setName("scheduled_channel").setDescription("Daily scheduled posts").addChannelTypes(ChannelType.GuildText))
-      .addBooleanOption(o => o.setName("ai_enabled").setDescription("Enable /ask and mention replies"))
-      .addBooleanOption(o => o.setName("automod_enabled").setDescription("Enable basic automod"))
-      .addBooleanOption(o => o.setName("block_invites").setDescription("Delete Discord invite links"))
-      .addChannelOption(o => o.setName("ticket_category").setDescription("Category for support tickets").addChannelTypes(ChannelType.GuildCategory))
-      .addChannelOption(o => o.setName("starboard_channel").setDescription("Starboard destination").addChannelTypes(ChannelType.GuildText))
-      .addIntegerOption(o => o.setName("starboard_threshold").setDescription("Stars required").setMinValue(1).setMaxValue(25)),
+      .addSubcommand(s => s.setName("complete").setDescription("Create a complete horror-themed Nymera server setup")
+        .addStringOption(o => o.setName("timezone").setDescription("IANA timezone (default: America/Denver)")))
+      .addSubcommand(s => s.setName("configure").setDescription("Manually change Nymera's main settings")
+        .addChannelOption(o => o.setName("welcome_channel").setDescription("Welcome messages").addChannelTypes(ChannelType.GuildText))
+        .addChannelOption(o => o.setName("goodbye_channel").setDescription("Goodbye messages").addChannelTypes(ChannelType.GuildText))
+        .addChannelOption(o => o.setName("log_channel").setDescription("Audit logs").addChannelTypes(ChannelType.GuildText))
+        .addRoleOption(o => o.setName("auto_role").setDescription("Role assigned on join"))
+        .addChannelOption(o => o.setName("scheduled_channel").setDescription("Daily scheduled posts").addChannelTypes(ChannelType.GuildText))
+        .addBooleanOption(o => o.setName("ai_enabled").setDescription("Enable /ask and mention replies"))
+        .addBooleanOption(o => o.setName("automod_enabled").setDescription("Enable basic automod"))
+        .addBooleanOption(o => o.setName("block_invites").setDescription("Delete Discord invite links"))
+        .addChannelOption(o => o.setName("ticket_category").setDescription("Category for support tickets").addChannelTypes(ChannelType.GuildCategory))
+        .addChannelOption(o => o.setName("starboard_channel").setDescription("Starboard destination").addChannelTypes(ChannelType.GuildText))
+        .addIntegerOption(o => o.setName("starboard_threshold").setDescription("Stars required").setMinValue(1).setMaxValue(25))),
     async execute(i) {
+      if (i.options.getSubcommand() === "complete") {
+        const timezone = i.options.getString("timezone") ?? "America/Denver";
+        if (!validTimezone(timezone)) {
+          return void await i.reply({ content: "That timezone is invalid. Try `America/Denver`.", ephemeral: true });
+        }
+        const me = i.guild!.members.me;
+        if (!me?.permissions.has(PermissionFlagsBits.ManageChannels) || !me.permissions.has(PermissionFlagsBits.ManageRoles)) {
+          return void await i.reply({
+            content: "Nymera needs **Manage Channels** and **Manage Roles** before running the complete setup.",
+            ephemeral: true
+          });
+        }
+        await i.deferReply({ ephemeral: true });
+        await i.guild!.channels.fetch();
+        await i.guild!.roles.fetch();
+
+        const threshold = await findOrCreateCategory(i, "🕯️ THE THRESHOLD");
+        const commons = await findOrCreateCategory(i, "🌫️ THE HAUNTED COMMONS");
+        const archives = await findOrCreateCategory(i, "🔮 THE ARCANE ARCHIVES");
+        const arcade = await findOrCreateCategory(i, "👻 THE MIDNIGHT ARCADE");
+        const beyond = await findOrCreateCategory(i, "🐦‍⬛ BEYOND THE VEIL");
+        const bumpCrypt = await findOrCreateCategory(i, "📣 SUMMON THE COVEN");
+        const voiceCrypt = await findOrCreateCategory(i, "🎙️ ECHOING CHAMBERS");
+        const sanctuary = await findOrCreateCategory(i, "🌿 THE SHADOW SANCTUARY");
+        const staffCrypt = await findOrCreateCategory(i, "💀 NYMERA'S WATCH", true);
+        const tickets = await findOrCreateCategory(i, "🗝️ SEALED CONFESSIONS", true);
+
+        const welcome = await findOrCreateTextChannel(i, threshold, "🕯️・𝖊𝖓𝖙𝖊𝖗-𝖙𝖍𝖊-𝖍𝖆𝖟𝖊", "New souls arrive through the veil.", ["enter-the-haze"]);
+        const goodbye = await findOrCreateTextChannel(i, threshold, "🌫️・𝖑𝖔𝖘𝖙-𝖙𝖔-𝖙𝖍𝖊-𝖒𝖎𝖘𝖙", "Farewells to souls departing the Hazeground.", ["lost-to-the-mist"]);
+        await findOrCreateTextChannel(i, threshold, "📜・𝖈𝖔𝖛𝖊𝖓-𝖑𝖆𝖜𝖘", "The laws and boundaries that protect the coven.", ["coven-laws"]);
+        const roles = await findOrCreateTextChannel(i, threshold, "🎭・𝖈𝖍𝖔𝖔𝖘𝖊-𝖞𝖔𝖚𝖗-𝖋𝖆𝖙𝖊", "Choose pronouns, interests, notifications, games, and magical paths.", ["choose-your-fate"]);
+        const general = await findOrCreateTextChannel(i, commons, "💬・𝖜𝖍𝖎𝖘𝖕𝖊𝖗𝖘-𝖋𝖗𝖔𝖒-𝖙𝖍𝖊-𝖛𝖔𝖎𝖉", "The coven's primary conversation chamber.", ["whispers-from-the-void"]);
+        await findOrCreateTextChannel(i, commons, "🖼️・𝖘𝖕𝖊𝖈𝖙𝖗𝖆𝖑-𝖘𝖍𝖔𝖜𝖈𝖆𝖘𝖊", "Share art, creations, screenshots, pets, and victories.", ["spectral-showcase"]);
+        await findOrCreateTextChannel(i, commons, "🃏・𝖈𝖚𝖗𝖘𝖊𝖉-𝖒𝖊𝖒𝖊𝖘", "Memes, cursed images, and chaotic offerings to the haze.", ["cursed-memes"]);
+        const announcements = await findOrCreateTextChannel(i, commons, "📣・𝖔𝖒𝖊𝖓𝖘-𝖆𝖓𝖉-𝖆𝖓𝖓𝖔𝖚𝖓𝖈𝖊𝖒𝖊𝖓𝖙𝖘", "Official community news and important omens.", ["omens-and-announcements"]);
+        const magic = await findOrCreateTextChannel(i, archives, "🔮・𝖋𝖔𝖗𝖇𝖎𝖉𝖉𝖊𝖓-𝖑𝖔𝖗𝖊", "Nymera's automatic magical lore and reflections.", ["forbidden-lore"]);
+        await findOrCreateTextChannel(i, archives, "🌙・𝖒𝖔𝖔𝖓𝖑𝖎𝖙-𝖗𝖎𝖙𝖚𝖆𝖑𝖘", "Reflective practices, tarot, herbs, astrology, and folklore.", ["moonlit-rituals"]);
+        const games = await findOrCreateTextChannel(i, arcade, "🎮・𝖌𝖆𝖒𝖊𝖘-𝖎𝖓-𝖙𝖍𝖊-𝖉𝖆𝖗𝖐", "Automatic games, riddles, trivia, encounters, and giveaways.", ["games-in-the-dark"]);
+        await findOrCreateTextChannel(i, arcade, "🩸・𝖙𝖗𝖎𝖆𝖑𝖘-𝖎𝖓-𝖙𝖍𝖊-𝖋𝖔𝖌", "Dead by Daylight discussion, builds, lore, and challenges.", ["trials-in-the-fog"]);
+        await findOrCreateTextChannel(i, arcade, "👻・𝖍𝖔𝖗𝖗𝖔𝖗-𝖌𝖆𝖒𝖊𝖘", "Survival horror, paranormal games, and frightening adventures.");
+        await findOrCreateTextChannel(i, arcade, "🍄・𝖈𝖔𝖟𝖞-𝖌𝖆𝖒𝖊𝖘", "Comforting games, farming sims, and peaceful adventures.");
+        await findOrCreateTextChannel(i, arcade, "🐉・𝖗𝖕𝖌-𝖗𝖊𝖆𝖑𝖒𝖘", "Roleplaying games, character builds, quests, and fantasy worlds.");
+        await findOrCreateTextChannel(i, arcade, "🎯・𝖆𝖈𝖙𝖎𝖔𝖓-𝖆𝖓𝖉-𝖋𝖕𝖘", "Action games, shooters, squads, and competitive play.");
+        await findOrCreateTextChannel(i, arcade, "🕹️・𝖎𝖓𝖉𝖎𝖊-𝖈𝖗𝖞𝖕𝖙", "Independent games, hidden gems, and unusual discoveries.");
+        await findOrCreateTextChannel(i, arcade, "🎉・𝖕𝖆𝖗𝖙𝖞-𝖌𝖆𝖒𝖊𝖘", "Party games, group sessions, and community game nights.");
+        await findOrCreateTextChannel(i, arcade, "🎲・𝖙𝖆𝖇𝖑𝖊𝖙𝖔𝖕-𝖙𝖔𝖒𝖇", "Board games, tabletop RPGs, card games, and dice.");
+        const social = await findOrCreateTextChannel(i, beyond, "📱・𝖘𝖎𝖌𝖓𝖆𝖑𝖘-𝖇𝖊𝖞𝖔𝖓𝖉-𝖙𝖍𝖊-𝖛𝖊𝖎𝖑", "Automatic social-media and community alerts.", ["signals-beyond-the-veil"]);
+        await findOrCreateTextChannel(i, beyond, "📡・𝖘𝖙𝖗𝖊𝖆𝖒-𝖘𝖚𝖒𝖒𝖔𝖓𝖎𝖓𝖌𝖘", "Twitch live alerts and streaming conversation.", ["stream-summonings"]);
+        await findOrCreateTextChannel(i, bumpCrypt, "🔔・𝖇𝖚𝖒𝖕-𝖙𝖍𝖊-𝖍𝖆𝖟𝖊", "Use approved server-list bump commands here and help summon new souls into the coven.", ["bump-the-haze", "server-bumps"]);
+        await findOrCreateVoiceChannel(i, voiceCrypt, "🕯️・Whispers by Candlelight", ["General Voice"]);
+        await findOrCreateVoiceChannel(i, voiceCrypt, "🎮・The Haunted Party", ["Gaming Voice"]);
+        await findOrCreateVoiceChannel(i, voiceCrypt, "🩸・Campfire in the Fog", ["Dead by Daylight Voice"]);
+        await findOrCreateVoiceChannel(i, voiceCrypt, "🌙・Moonlit Lounge", ["Chill Voice"]);
+        await findOrCreateVoiceChannel(i, voiceCrypt, "🌫️・Lost in the Fog", ["AFK"]);
+        const wellness = await findOrCreateTextChannel(i, sanctuary, "🌿・𝖒𝖔𝖗𝖙𝖆𝖑-𝖈𝖍𝖊𝖈𝖐-𝖎𝖓", "A gentle peer-support space; not a replacement for professional care.", ["mortal-check-in"]);
+        const levels = await findOrCreateTextChannel(i, commons, "✨・𝖆𝖘𝖈𝖊𝖓𝖘𝖎𝖔𝖓-𝖗𝖎𝖙𝖊𝖘", "Level-up announcements and coven milestones.", ["ascension-rites"]);
+        const starboard = await findOrCreateTextChannel(i, commons, "⭐・𝖍𝖆𝖑𝖑-𝖔𝖋-𝖔𝖒𝖊𝖓𝖘", "The community's most treasured messages.", ["hall-of-omens"]);
+        const logs = await findOrCreateTextChannel(i, staffCrypt, "📚・𝖓𝖞𝖒𝖊𝖗𝖆𝖘-𝖆𝖗𝖈𝖍𝖎𝖛𝖊𝖘", "Private moderation and server activity records.", ["nymeras-archives"]);
+        const review = await findOrCreateTextChannel(i, staffCrypt, "👁️・𝖔𝖗𝖆𝖈𝖑𝖊-𝖗𝖊𝖛𝖎𝖊𝖜", "Private staff review for AI moderation suggestions.", ["oracle-review"]);
+
+        let autoRole = i.guild!.roles.cache.find(role => role.name.toLowerCase() === "🌫️ lost soul");
+        autoRole ??= await i.guild!.roles.create({
+          name: "🌫️ Lost Soul",
+          color: 0x4b5563,
+          reason: `Complete Nymera setup requested by ${i.user.tag}`
+        });
+
+        const existingPanelButtons = await prisma.reactionRole.count({
+          where: { guildId: i.guildId!, channelId: roles.id, emoji: { startsWith: "button:" } }
+        });
+        let panelSummary = "existing panels kept";
+        if (existingPanelButtons < 65) {
+          const result = await createCommunityRolePanels(
+            i.guild!,
+            roles,
+            `Complete Nymera setup requested by ${i.user.tag}`
+          );
+          panelSummary = `${result.createdRoles} roles created, ${result.reusedRoles} reused`;
+          await i.guild!.roles.fetch();
+        }
+        const levelRoles = await createThemedLevelRoles(
+          i.guild!,
+          `Complete Nymera setup requested by ${i.user.tag}`
+        );
+
+        await ensureGuild(i.guildId!);
+        await prisma.guildConfig.update({
+          where: { guildId: i.guildId! },
+          data: {
+            welcomeChannelId: welcome.id,
+            goodbyeChannelId: goodbye.id,
+            logChannelId: logs.id,
+            autoRoleId: autoRole.id,
+            scheduledChannelId: announcements.id,
+            aiEnabled: true,
+            aiMode: "mystic",
+            aiAutoReplyEnabled: true,
+            aiAutoReplyChance: 15,
+            aiConversationChannelId: general.id,
+            aiAutoReplyCooldownMinutes: 10,
+            aiConversationStarterEnabled: true,
+            aiConversationStarterMinutes: 180,
+            aiModerationEnabled: true,
+            aiReviewChannelId: review.id,
+            automodEnabled: true,
+            blockInvites: true,
+            timezone,
+            ticketCategoryId: tickets.id,
+            starboardChannelId: starboard.id,
+            starboardThreshold: 3,
+            levelUpEnabled: true,
+            levelUpChannelId: levels.id
+          }
+        });
+
+        const gameAlertRole = i.guild!.roles.cache.find(role => role.name.toLowerCase() === "game alerts");
+        await prisma.autoGameConfig.upsert({
+          where: { guildId: i.guildId! },
+          update: { channelId: games.id, pingRoleId: gameAlertRole?.id, enabled: true, intervalMinutes: 90, answerSeconds: 300 },
+          create: { guildId: i.guildId!, channelId: games.id, pingRoleId: gameAlertRole?.id, intervalMinutes: 90, answerSeconds: 300 }
+        });
+
+        const magicAlertRole = i.guild!.roles.cache.find(role => role.name.toLowerCase() === "magic post alerts");
+        const wellnessRole = i.guild!.roles.cache.find(role => role.name.toLowerCase() === "wellness check-in alerts");
+        await prisma.scheduledPost.deleteMany({
+          where: {
+            guildId: i.guildId!,
+            OR: [
+              { content: { contains: "{{magic_six_daily_" } },
+              { content: { contains: mentalHealthMarker } },
+              { content: { in: ["{{daily_morning}}", "{{daily_midday}}", "{{daily_evening}}", "{{daily_night}}"] } }
+            ]
+          }
+        });
+        for (const post of completeMagicSchedule) {
+          const roleIds = [...post.roleNames, "Magic Post Alerts"]
+            .map(name => i.guild!.roles.cache.find(role => role.name.toLowerCase() === name.toLowerCase())?.id)
+            .filter((id): id is string => Boolean(id));
+          await prisma.scheduledPost.create({
+            data: {
+              guildId: i.guildId!,
+              channelId: magic.id,
+              content: `${[...new Set([magicAlertRole?.id, ...roleIds].filter(Boolean))].map(id => `<@&${id}>`).join(" ")}\n${post.token}`.trim(),
+              cron: `0 ${post.hour} * * *`,
+              timezone
+            }
+          });
+        }
+        for (const daily of [
+          { hour: 9, token: "{{daily_morning}}" },
+          { hour: 12, token: "{{daily_midday}}" },
+          { hour: 18, token: "{{daily_evening}}" },
+          { hour: 21, token: "{{daily_night}}" }
+        ]) {
+          await prisma.scheduledPost.create({
+            data: { guildId: i.guildId!, channelId: announcements.id, content: daily.token, cron: `0 ${daily.hour} * * *`, timezone }
+          });
+        }
+        await saveMentalHealthSchedule({
+          guildId: i.guildId!,
+          channelId: wellness.id,
+          roleId: wellnessRole?.id,
+          hour: 15,
+          timezone
+        });
+
+        await i.editReply(
+          `Complete horror-themed setup finished.\n\n` +
+          `• **10 categories**, **27 text channels**, and **5 voice channels** are ready\n` +
+          `• Community panels: **${panelSummary}**\n` +
+          `• **${levelRoles.length} level roles** connected\n` +
+          `• Welcome, goodbye, logs, tickets, starboard, autorole, levels, automod, and AI configured\n` +
+          `• Automatic games run every **90 minutes** in ${games}\n` +
+          `• Six magic posts and four community messages are scheduled daily\n` +
+          `• Mental-health check-in runs daily at **3 PM**\n\n` +
+          `Restart or redeploy Nymera once to load every new schedule. Add social feeds to ${social}; Twitch and social feeds still require your account URLs or credentials.`
+        );
+        return;
+      }
       await ensureGuild(i.guildId!);
       const data = {
         welcomeChannelId: i.options.getChannel("welcome_channel")?.id,
