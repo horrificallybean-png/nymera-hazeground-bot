@@ -12,6 +12,7 @@ import type { Command } from "../types.js";
 import { ensureGuild, prisma } from "../database.js";
 import { createCommunityRolePanels } from "./community.js";
 import { createThemedLevelRoles } from "./levels.js";
+import { discordAsset } from "../services/assets.js";
 
 const mentalHealthMarker = "🌿 **Gentle Mental Health Check-In**";
 
@@ -49,6 +50,73 @@ function validTimezone(timezone: string) {
   } catch {
     return false;
   }
+}
+
+async function publishServerRules(channel: TextChannel) {
+  const files = discordAsset("welcome-banner.png");
+  const embed = new EmbedBuilder()
+    .setColor(0x6f42c1)
+    .setTitle("📜 The Coven Laws")
+    .setDescription(
+      "Welcome to **Spellbound Hazeground**—a realm of magic, mystery, horror, gaming, and community. " +
+      "By remaining here, every soul agrees to protect the coven and follow these laws."
+    )
+    .addFields(
+      {
+        name: "🕯️ 1. Respect Every Soul",
+        value: "Treat members with kindness. Harassment, bullying, discrimination, hate speech, threats, or targeted hostility are forbidden."
+      },
+      {
+        name: "🌫️ 2. Keep the Haze Safe",
+        value: "No doxxing, stalking, scams, malicious links, impersonation, ban evasion, or sharing another person's private information."
+      },
+      {
+        name: "🔞 3. Keep Shared Spaces Appropriate",
+        value: "No explicit sexual content, graphic gore, or illegal material. Use content warnings for sensitive horror topics and follow Discord's age requirements."
+      },
+      {
+        name: "💬 4. Use the Correct Chambers",
+        value: "Keep conversations in their matching channels. Avoid spam, disruptive walls of text, excessive mentions, and repeated self-promotion."
+      },
+      {
+        name: "🎮 5. Play Fair",
+        value: "Do not cheat, exploit Nymera, manipulate rewards, reveal active game answers, or deliberately ruin community events."
+      },
+      {
+        name: "🔮 6. Magic Is Reflective and Educational",
+        value: "Tarot, herbs, astrology, rituals, and folklore are discussed for reflection, culture, history, and entertainment—not as medical, legal, or financial advice."
+      },
+      {
+        name: "🌿 7. Protect Wellness Conversations",
+        value: "Be compassionate, respect boundaries, and do not pressure anyone to disclose personal experiences. Peer support is not professional care."
+      },
+      {
+        name: "📣 8. Promotion Requires Permission",
+        value: "Post social links, streams, invitations, and advertisements only in approved areas or with staff permission."
+      },
+      {
+        name: "🛡️ 9. Respect Staff Decisions",
+        value: "Follow moderator directions. If you disagree, use a private support ticket instead of arguing in public channels."
+      },
+      {
+        name: "👁️ 10. Discord Rules Still Apply",
+        value: "Follow the Discord Terms of Service and Community Guidelines. Staff may act on harmful behavior not explicitly listed here."
+      }
+    )
+    .setFooter({ text: "Spellbound Hazeground • React with ✅ to acknowledge the Coven Laws" })
+    .setTimestamp();
+  if (files.length) embed.setImage("attachment://welcome-banner.png");
+
+  const recent = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+  const existing = recent?.find(message =>
+    message.author.id === channel.client.user.id &&
+    message.embeds.some(item => item.title === "📜 The Coven Laws")
+  );
+  const message = existing
+    ? await existing.edit({ embeds: [embed], files })
+    : await channel.send({ embeds: [embed], files });
+  await message.react("✅").catch(() => null);
+  return message;
 }
 
 const completeMagicSchedule = [
@@ -182,15 +250,17 @@ export const configurationCommands: Command[] = [
         const archives = await findOrCreateCategory(i, "🔮 THE ARCANE ARCHIVES");
         const arcade = await findOrCreateCategory(i, "👻 THE MIDNIGHT ARCADE");
         const beyond = await findOrCreateCategory(i, "🐦‍⬛ BEYOND THE VEIL");
+        const allies = await findOrCreateCategory(i, "🤝 ALLIED COVENS");
         const bumpCrypt = await findOrCreateCategory(i, "📣 SUMMON THE COVEN");
         const voiceCrypt = await findOrCreateCategory(i, "🎙️ ECHOING CHAMBERS");
         const sanctuary = await findOrCreateCategory(i, "🌿 THE SHADOW SANCTUARY");
         const staffCrypt = await findOrCreateCategory(i, "💀 NYMERA'S WATCH", true);
+        const innerCircle = await findOrCreateCategory(i, "🛡️ THE INNER CIRCLE", true);
         const tickets = await findOrCreateCategory(i, "🗝️ SEALED CONFESSIONS", true);
 
         const welcome = await findOrCreateTextChannel(i, threshold, "🕯️・𝖊𝖓𝖙𝖊𝖗-𝖙𝖍𝖊-𝖍𝖆𝖟𝖊", "New souls arrive through the veil.", ["enter-the-haze"]);
         const goodbye = await findOrCreateTextChannel(i, threshold, "🌫️・𝖑𝖔𝖘𝖙-𝖙𝖔-𝖙𝖍𝖊-𝖒𝖎𝖘𝖙", "Farewells to souls departing the Hazeground.", ["lost-to-the-mist"]);
-        await findOrCreateTextChannel(i, threshold, "📜・𝖈𝖔𝖛𝖊𝖓-𝖑𝖆𝖜𝖘", "The laws and boundaries that protect the coven.", ["coven-laws"]);
+        const rulesChannel = await findOrCreateTextChannel(i, threshold, "📜・𝖈𝖔𝖛𝖊𝖓-𝖑𝖆𝖜𝖘", "The laws and boundaries that protect the coven.", ["coven-laws"]);
         const roles = await findOrCreateTextChannel(i, threshold, "🎭・𝖈𝖍𝖔𝖔𝖘𝖊-𝖞𝖔𝖚𝖗-𝖋𝖆𝖙𝖊", "Choose pronouns, interests, notifications, games, and magical paths.", ["choose-your-fate"]);
         const general = await findOrCreateTextChannel(i, commons, "💬・𝖜𝖍𝖎𝖘𝖕𝖊𝖗𝖘-𝖋𝖗𝖔𝖒-𝖙𝖍𝖊-𝖛𝖔𝖎𝖉", "The coven's primary conversation chamber.", ["whispers-from-the-void"]);
         await findOrCreateTextChannel(i, commons, "🖼️・𝖘𝖕𝖊𝖈𝖙𝖗𝖆𝖑-𝖘𝖍𝖔𝖜𝖈𝖆𝖘𝖊", "Share art, creations, screenshots, pets, and victories.", ["spectral-showcase"]);
@@ -209,6 +279,7 @@ export const configurationCommands: Command[] = [
         await findOrCreateTextChannel(i, arcade, "🎲・𝖙𝖆𝖇𝖑𝖊𝖙𝖔𝖕-𝖙𝖔𝖒𝖇", "Board games, tabletop RPGs, card games, and dice.");
         const social = await findOrCreateTextChannel(i, beyond, "📱・𝖘𝖎𝖌𝖓𝖆𝖑𝖘-𝖇𝖊𝖞𝖔𝖓𝖉-𝖙𝖍𝖊-𝖛𝖊𝖎𝖑", "Automatic social-media and community alerts.", ["signals-beyond-the-veil"]);
         await findOrCreateTextChannel(i, beyond, "📡・𝖘𝖙𝖗𝖊𝖆𝖒-𝖘𝖚𝖒𝖒𝖔𝖓𝖎𝖓𝖌𝖘", "Twitch live alerts and streaming conversation.", ["stream-summonings"]);
+        await findOrCreateTextChannel(i, allies, "🤝・𝖕𝖆𝖗𝖙𝖓𝖊𝖗𝖊𝖉-𝖗𝖊𝖆𝖑𝖒𝖘", "Discover trusted partner servers and allied communities.", ["partnered-servers", "server-partners"]);
         await findOrCreateTextChannel(i, bumpCrypt, "🔔・𝖇𝖚𝖒𝖕-𝖙𝖍𝖊-𝖍𝖆𝖟𝖊", "Use approved server-list bump commands here and help summon new souls into the coven.", ["bump-the-haze", "server-bumps"]);
         await findOrCreateVoiceChannel(i, voiceCrypt, "🕯️・Whispers by Candlelight", ["General Voice"]);
         await findOrCreateVoiceChannel(i, voiceCrypt, "🎮・The Haunted Party", ["Gaming Voice"]);
@@ -220,6 +291,25 @@ export const configurationCommands: Command[] = [
         const starboard = await findOrCreateTextChannel(i, commons, "⭐・𝖍𝖆𝖑𝖑-𝖔𝖋-𝖔𝖒𝖊𝖓𝖘", "The community's most treasured messages.", ["hall-of-omens"]);
         const logs = await findOrCreateTextChannel(i, staffCrypt, "📚・𝖓𝖞𝖒𝖊𝖗𝖆𝖘-𝖆𝖗𝖈𝖍𝖎𝖛𝖊𝖘", "Private moderation and server activity records.", ["nymeras-archives"]);
         const review = await findOrCreateTextChannel(i, staffCrypt, "👁️・𝖔𝖗𝖆𝖈𝖑𝖊-𝖗𝖊𝖛𝖎𝖊𝖜", "Private staff review for AI moderation suggestions.", ["oracle-review"]);
+
+        let staffRole = i.guild!.roles.cache.find(role => role.name.toLowerCase() === "🛡️ coven staff");
+        staffRole ??= await i.guild!.roles.create({
+          name: "🛡️ Coven Staff",
+          color: 0x7e22ce,
+          mentionable: true,
+          reason: `Complete Nymera setup requested by ${i.user.tag}`
+        });
+        await innerCircle.permissionOverwrites.edit(staffRole.id, {
+          ViewChannel: true,
+          SendMessages: true,
+          ReadMessageHistory: true,
+          Connect: true,
+          Speak: true
+        });
+        await findOrCreateTextChannel(i, innerCircle, "🕯️・𝖎𝖓𝖓𝖊𝖗-𝖈𝖎𝖗𝖈𝖑𝖊-𝖈𝖍𝖆𝖙", "Private conversation for the Spellbound Hazeground staff team.", ["staff-chat"]);
+        await findOrCreateTextChannel(i, innerCircle, "📜・𝖘𝖙𝖆𝖋𝖋-𝖔𝖒𝖊𝖓𝖘", "Private staff announcements, plans, and important updates.", ["staff-announcements"]);
+        await findOrCreateTextChannel(i, innerCircle, "⚙️・𝖓𝖞𝖒𝖊𝖗𝖆-𝖈𝖔𝖒𝖒𝖆𝖓𝖉𝖘", "Private workspace for moderation and Nymera administration commands.", ["staff-commands", "bot-commands"]);
+        await findOrCreateVoiceChannel(i, innerCircle, "🗝️・Council Chamber", ["Staff Voice"]);
 
         let autoRole = i.guild!.roles.cache.find(role => role.name.toLowerCase() === "🌫️ lost soul");
         autoRole ??= await i.guild!.roles.create({
@@ -326,11 +416,14 @@ export const configurationCommands: Command[] = [
           hour: 15,
           timezone
         });
+        await publishServerRules(rulesChannel);
 
         await i.editReply(
           `Complete horror-themed setup finished.\n\n` +
-          `• **10 categories**, **27 text channels**, and **5 voice channels** are ready\n` +
+          `• **12 categories**, **31 text channels**, and **6 voice channels** are ready\n` +
+          `• Partner-server area and private staff headquarters created\n` +
           `• Community panels: **${panelSummary}**\n` +
+          `• Coven rules embed posted in ${rulesChannel}\n` +
           `• **${levelRoles.length} level roles** connected\n` +
           `• Welcome, goodbye, logs, tickets, starboard, autorole, levels, automod, and AI configured\n` +
           `• Automatic games run every **90 minutes** in ${games}\n` +
