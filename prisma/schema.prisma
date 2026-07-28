@@ -95,6 +95,21 @@ model TwitchAlertConfig {
   updatedAt    DateTime @updatedAt
 }
 
+model SocialFeed {
+  id            Int      @id @default(autoincrement())
+  guildId       String
+  channelId     String
+  platform      String
+  feedUrl       String
+  enabled       Boolean  @default(true)
+  lastItemId    String?
+  lastCheckedAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([guildId, enabled])
+}
+
 model AiUserMemory {
   guildId  String
   userId   String

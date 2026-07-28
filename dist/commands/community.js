@@ -3,6 +3,7 @@ import { ensureGuild, prisma } from "../database.js";
 import { endGiveaway, giveawayEmbed, parseDuration } from "../services/community.js";
 import { discordAsset } from "../services/assets.js";
 import { checkTwitchAlert, twitchConfigured } from "../services/twitch-alerts.js";
+import { checkSocialFeed, fetchSocialFeed } from "../services/social-feeds.js";
 const communityRolePanels = [
     {
         title: "Choose Your Pronouns",
@@ -402,6 +403,80 @@ export const communityCommands = [
             catch (error) {
                 const reason = error instanceof Error ? error.message : String(error);
                 await i.editReply(`The Twitch check failed: \`${reason.slice(0, 500)}\``);
+            }
+        }
+    },
+    {
+        data: new SlashCommandBuilder().setName("social-auto").setDescription("Configure automatic social-media feed alerts")
+            .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+            .addSubcommand(s => s.setName("add").setDescription("Add an RSS or Atom social feed")
+            .addChannelOption(o => o.setName("channel").setDescription("Discord alert channel").setRequired(true).addChannelTypes(ChannelType.GuildText))
+            .addStringOption(o => o.setName("platform").setDescription("Platform or account label").setRequired(true).setMaxLength(40))
+            .addStringOption(o => o.setName("feed_url").setDescription("Direct RSS or Atom feed URL").setRequired(true).setMaxLength(1000)))
+            .addSubcommand(s => s.setName("list").setDescription("List automatic social feeds"))
+            .addSubcommand(s => s.setName("remove").setDescription("Remove an automatic social feed")
+            .addIntegerOption(o => o.setName("id").setDescription("Feed ID from /social-auto list").setRequired(true).setMinValue(1)))
+            .addSubcommand(s => s.setName("test").setDescription("Check and post the newest feed item now")
+            .addIntegerOption(o => o.setName("id").setDescription("Feed ID from /social-auto list").setRequired(true).setMinValue(1))),
+        async execute(i) {
+            const subcommand = i.options.getSubcommand();
+            if (subcommand === "add") {
+                const feedUrl = i.options.getString("feed_url", true).trim();
+                try {
+                    const parsed = new URL(feedUrl);
+                    if (parsed.protocol !== "https:" && parsed.protocol !== "http:")
+                        throw new Error();
+                }
+                catch {
+                    return void await i.reply({ content: "Enter a complete RSS or Atom URL beginning with `https://`.", ephemeral: true });
+                }
+                await i.deferReply({ ephemeral: true });
+                try {
+                    const items = await fetchSocialFeed(feedUrl);
+                    const channel = i.options.getChannel("channel", true);
+                    const feed = await prisma.socialFeed.create({
+                        data: {
+                            guildId: i.guildId,
+                            channelId: channel.id,
+                            platform: i.options.getString("platform", true).trim(),
+                            feedUrl,
+                            lastItemId: items[0].id,
+                            lastCheckedAt: new Date()
+                        }
+                    });
+                    await i.editReply(`Automatic social feed **#${feed.id}** is active in ${channel}. Nymera saved the current newest item and will announce only future posts.`);
+                }
+                catch (error) {
+                    const reason = error instanceof Error ? error.message : String(error);
+                    await i.editReply(`Nymera could not read that feed: \`${reason.slice(0, 500)}\``);
+                }
+                return;
+            }
+            if (subcommand === "list") {
+                const feeds = await prisma.socialFeed.findMany({ where: { guildId: i.guildId }, orderBy: { id: "asc" }, take: 20 });
+                await i.reply({
+                    content: feeds.map(feed => `**#${feed.id}** • **${feed.platform}** • <#${feed.channelId}> • ${feed.enabled ? "enabled" : "disabled"}\n${feed.feedUrl}`).join("\n\n") || "No automatic social feeds are configured.",
+                    ephemeral: true
+                });
+                return;
+            }
+            const feedId = i.options.getInteger("id", true);
+            const feed = await prisma.socialFeed.findFirst({ where: { id: feedId, guildId: i.guildId } });
+            if (!feed)
+                return void await i.reply({ content: "That social feed was not found.", ephemeral: true });
+            if (subcommand === "remove") {
+                await prisma.socialFeed.delete({ where: { id: feed.id } });
+                await i.reply({ content: `Automatic social feed #${feed.id} was removed.`, ephemeral: true });
+                return;
+            }
+            await i.deferReply({ ephemeral: true });
+            try {
+                await checkSocialFeed(i.client, feed.id, true);
+                await i.editReply("Nymera posted the newest item as a test alert.");
+            }
+            catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                await i.editReply(`The feed test failed: \`${reason.slice(0, 500)}\``);
             }
         }
     },
