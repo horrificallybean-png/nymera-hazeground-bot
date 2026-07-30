@@ -49,60 +49,113 @@ function renderRotatingContent(content: string, rotation: number, date = new Dat
   return renderMagicTemplate(rendered, date, rotation);
 }
 
-export async function startScheduler(client: Client) {
+type ScheduledTaskEntry = {
+  task: ReturnType<typeof cron.schedule>;
+  signature: string;
+};
+
+const activeTasks = new Map<number, ScheduledTaskEntry>();
+let schedulerMonitorStarted = false;
+
+async function deliverScheduledPost(client: Client, postId: number) {
+  const post = await prisma.scheduledPost.findUnique({ where: { id: postId } });
+  if (!post?.enabled) return { ok: false, reason: "The scheduled post is missing or disabled." };
+  const channel = await client.channels.fetch(post.channelId).catch(() => null);
+  if (!channel || !("send" in channel)) {
+    return { ok: false, reason: `Nymera cannot access or post in channel ${post.channelId}.` };
+  }
+  const nextVariant = post.lastVariantIndex + 1;
+  try {
+    const fallback = renderRotatingContent(post.content, nextVariant);
+    const kind = `scheduled_post:${post.id}`;
+    const history = await prisma.generatedContentHistory.findMany({
+      where: { guildId: post.guildId, kind },
+      orderBy: { createdAt: "desc" },
+      take: 12
+    });
+    const content = await generateDynamicScheduledContent(
+      post.content,
+      fallback,
+      history.map(entry => entry.content)
+    );
+    const magicPost = /\{\{(?:daily_tarot|herb_lore|moon_phase|magic_six_daily_)\S*\}\}/.test(post.content);
+    const mentionedRoles = [...content.matchAll(/<@&(\d+)>/g)].map(match => match[1]!);
+    await channel.send({
+      content,
+      allowedMentions: { roles: mentionedRoles },
+      ...(magicPost ? discordArtwork("magic-banner.png") : { files: [], embeds: [] })
+    });
+    await prisma.$transaction([
+      prisma.scheduledPost.update({
+        where: { id: post.id },
+        data: { lastVariantIndex: nextVariant }
+      }),
+      prisma.generatedContentHistory.create({
+        data: { guildId: post.guildId, kind, content }
+      })
+    ]);
+    const expired = await prisma.generatedContentHistory.findMany({
+      where: { guildId: post.guildId, kind },
+      orderBy: { createdAt: "desc" },
+      skip: 30,
+      select: { id: true }
+    });
+    if (expired.length) {
+      await prisma.generatedContentHistory.deleteMany({ where: { id: { in: expired.map(entry => entry.id) } } });
+    }
+    logger.info({ postId: post.id, channelId: post.channelId }, "Scheduled post delivered");
+    return { ok: true };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    logger.error({ err: error, postId: post.id, channelId: post.channelId }, "Scheduled post failed");
+    return { ok: false, reason };
+  }
+}
+
+async function synchronizeScheduledTasks(client: Client) {
   const posts = await prisma.scheduledPost.findMany({ where: { enabled: true } });
+  const currentIds = new Set(posts.map(post => post.id));
+  for (const [postId, entry] of activeTasks) {
+    if (!currentIds.has(postId)) {
+      entry.task.stop();
+      activeTasks.delete(postId);
+    }
+  }
   for (const post of posts) {
     if (!cron.validate(post.cron)) {
       logger.warn({ postId: post.id }, "Skipping invalid scheduled post");
       continue;
     }
-    cron.schedule(post.cron, async () => {
-      const channel = await client.channels.fetch(post.channelId).catch(() => null);
-      if (!channel || !("send" in channel)) return;
-      const nextVariant = post.lastVariantIndex + 1;
-      try {
-        const fallback = renderRotatingContent(post.content, nextVariant);
-        const kind = `scheduled_post:${post.id}`;
-        const history = await prisma.generatedContentHistory.findMany({
-          where: { guildId: post.guildId, kind },
-          orderBy: { createdAt: "desc" },
-          take: 12
-        });
-        const content = await generateDynamicScheduledContent(
-          post.content,
-          fallback,
-          history.map(entry => entry.content)
-        );
-        const magicPost = /\{\{(?:daily_tarot|herb_lore|moon_phase|magic_six_daily_)\S*\}\}/.test(post.content);
-        const mentionedRoles = [...content.matchAll(/<@&(\d+)>/g)].map(match => match[1]!);
-        await channel.send({
-          content,
-          allowedMentions: { roles: mentionedRoles },
-          ...(magicPost ? discordArtwork("magic-banner.png") : { files: [], embeds: [] })
-        });
-        post.lastVariantIndex = nextVariant;
-        await prisma.$transaction([
-          prisma.scheduledPost.update({
-            where: { id: post.id },
-            data: { lastVariantIndex: nextVariant }
-          }),
-          prisma.generatedContentHistory.create({
-            data: { guildId: post.guildId, kind, content }
-          })
-        ]);
-        const expired = await prisma.generatedContentHistory.findMany({
-          where: { guildId: post.guildId, kind },
-          orderBy: { createdAt: "desc" },
-          skip: 30,
-          select: { id: true }
-        });
-        if (expired.length) {
-          await prisma.generatedContentHistory.deleteMany({ where: { id: { in: expired.map(entry => entry.id) } } });
-        }
-      } catch (error) {
-        logger.error({ err: error, postId: post.id }, "Scheduled post failed");
-      }
-    }, { timezone: post.timezone });
+    const signature = `${post.cron}|${post.timezone}|${post.channelId}|${post.updatedAt.toISOString()}`;
+    const existing = activeTasks.get(post.id);
+    if (existing?.signature === signature) continue;
+    existing?.task.stop();
+    try {
+      const task = cron.schedule(post.cron, async () => {
+        await deliverScheduledPost(client, post.id);
+      }, { timezone: post.timezone });
+      activeTasks.set(post.id, { task, signature });
+    } catch (error) {
+      logger.error({ err: error, postId: post.id, timezone: post.timezone }, "Could not activate scheduled post");
+    }
   }
-  logger.info({ scheduledPosts: posts.length }, "Scheduler initialized");
+  return activeTasks.size;
+}
+
+export async function runScheduledPostNow(client: Client, guildId: string, postId: number) {
+  const post = await prisma.scheduledPost.findFirst({ where: { id: postId, guildId } });
+  if (!post) return { ok: false, reason: "That scheduled post was not found in this server." };
+  return deliverScheduledPost(client, post.id);
+}
+
+export async function startScheduler(client: Client) {
+  const count = await synchronizeScheduledTasks(client);
+  logger.info({ scheduledPosts: count }, `Scheduler initialized with ${count} active posts`);
+  if (schedulerMonitorStarted) return;
+  schedulerMonitorStarted = true;
+  setInterval(() => {
+    void synchronizeScheduledTasks(client).catch(error => {
+      logger.error({ err: error }, "Scheduled-post synchronization failed");
+    });
+  }, 60_000).unref();
 }

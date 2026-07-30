@@ -4,6 +4,7 @@ import { ensureGuild, prisma } from "../database.js";
 import { createCommunityRolePanels } from "./community.js";
 import { createThemedLevelRoles } from "./levels.js";
 import { discordAsset } from "../services/assets.js";
+import { runScheduledPostNow } from "../services/scheduler.js";
 const mentalHealthMarker = "🌿 **Gentle Mental Health Check-In**";
 function mentalHealthContent(roleId) {
     return `${roleId ? `${roleMention(roleId)}\n\n` : ""}${mentalHealthMarker}\n\n{{daily_wellness}}\n\nThis is peer support, not professional care.`;
@@ -353,7 +354,7 @@ export const configurationCommands = [
                     `• Automatic games run every **90 minutes** in ${games}\n` +
                     `• Six magic posts and four community messages are scheduled daily\n` +
                     `• Mental-health check-in runs daily at **3 PM**\n\n` +
-                    `Restart or redeploy Nymera once to load every new schedule. Add social feeds to ${social}; Twitch and social feeds still require your account URLs or credentials.`);
+                    `Nymera will activate every new schedule automatically within one minute. Add social feeds to ${social}; Twitch and social feeds still require your account URLs or credentials.`);
                 return;
             }
             await ensureGuild(i.guildId);
@@ -399,7 +400,7 @@ export const configurationCommands = [
                     content: i.options.getString("content", true),
                     timezone: i.options.getString("timezone") ?? "America/Denver"
                 } });
-            await i.reply({ content: "Scheduled post saved. Restart the bot to load the new schedule.", ephemeral: true });
+            await i.reply({ content: "Scheduled post saved. Nymera will activate it automatically within one minute.", ephemeral: true });
         }
     },
     {
@@ -420,21 +421,32 @@ export const configurationCommands = [
                     content: i.options.getString("preset", true),
                     timezone: i.options.getString("timezone") ?? "America/Denver"
                 } });
-            await i.reply({ content: `Rotating daily message #${post.id} saved. Restart Nymera to load it.`, ephemeral: true });
+            await i.reply({ content: `Rotating daily message #${post.id} saved. Nymera will activate it automatically within one minute.`, ephemeral: true });
         }
     },
     {
         data: new SlashCommandBuilder().setName("scheduled-posts").setDescription("List or delete scheduled posts")
             .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
             .addSubcommand(s => s.setName("list").setDescription("List this server's scheduled posts"))
+            .addSubcommand(s => s.setName("test").setDescription("Post one saved schedule immediately")
+            .addIntegerOption(o => o.setName("id").setDescription("Post ID from the list").setRequired(true).setMinValue(1)))
             .addSubcommand(s => s.setName("delete").setDescription("Delete a scheduled post")
             .addIntegerOption(o => o.setName("id").setDescription("Post ID from the list").setRequired(true).setMinValue(1))),
         async execute(i) {
-            if (i.options.getSubcommand() === "delete") {
+            const subcommand = i.options.getSubcommand();
+            if (subcommand === "delete") {
                 const result = await prisma.scheduledPost.deleteMany({
                     where: { id: i.options.getInteger("id", true), guildId: i.guildId }
                 });
-                await i.reply({ content: result.count ? "Scheduled post deleted. Restart Nymera to unload it." : "Scheduled post not found.", ephemeral: true });
+                await i.reply({ content: result.count ? "Scheduled post deleted. Nymera will unload it automatically within one minute." : "Scheduled post not found.", ephemeral: true });
+                return;
+            }
+            if (subcommand === "test") {
+                await i.deferReply({ ephemeral: true });
+                const result = await runScheduledPostNow(i.client, i.guildId, i.options.getInteger("id", true));
+                await i.editReply(result.ok
+                    ? "The scheduled post was delivered successfully."
+                    : `The scheduled post failed: ${result.reason ?? "Unknown error"}`);
                 return;
             }
             const posts = await prisma.scheduledPost.findMany({
@@ -473,7 +485,7 @@ export const configurationCommands = [
                 timezone
             });
             await i.reply({
-                content: `Daily mental-health check-in scheduled in ${channel} at **${hour.toString().padStart(2, "0")}:00** (${timezone}). Restart Nymera once to activate it.`,
+                content: `Daily mental-health check-in scheduled in ${channel} at **${hour.toString().padStart(2, "0")}:00** (${timezone}). Nymera will activate it automatically within one minute.`,
                 ephemeral: true
             });
         }
@@ -520,7 +532,7 @@ export const configurationCommands = [
                 hour,
                 timezone
             });
-            await i.editReply(`Created **${categoryName}** with ${channel}. The daily check-in is set for **${hour.toString().padStart(2, "0")}:00** (${timezone}). Restart Nymera once to activate it.`);
+            await i.editReply(`Created **${categoryName}** with ${channel}. The daily check-in is set for **${hour.toString().padStart(2, "0")}:00** (${timezone}). Nymera will activate it automatically within one minute.`);
         }
     }
 ];

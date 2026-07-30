@@ -144,7 +144,7 @@ export const magicCommands: Command[] = [
         content: `${i.options.getRole("ping_role") ? `<@&${i.options.getRole("ping_role")!.id}>` + "\n" : ""}${i.options.getString("content", true)}`, cron: expression,
         timezone: i.options.getString("timezone") ?? "America/Denver"
       } });
-      await i.reply({ content: "Magic post scheduled. Restart Nymera to load the new schedule.", ephemeral: true });
+      await i.reply({ content: "Magic post scheduled. Nymera will activate it automatically within one minute.", ephemeral: true });
     }
   },
   {
@@ -185,7 +185,7 @@ export const magicCommands: Command[] = [
         })
       ]);
       await i.reply({
-        content: `Six daily AI magic posts are scheduled in ${channel} at **6 AM, 9 AM, 12 PM, 3 PM, 6 PM, and 9 PM** (${timezone}). Each post will ping its matching magic-interest roles.${missingRoleNames.size ? ` Missing roles that could not be connected: **${[...missingRoleNames].join(", ")}**. Run \`/community-role-panels\`, then run this command again.` : ""} Restart or redeploy Nymera once to activate them.`,
+        content: `Six daily AI magic posts are scheduled in ${channel} at **6 AM, 9 AM, 12 PM, 3 PM, 6 PM, and 9 PM** (${timezone}). Each post will ping its matching magic-interest roles.${missingRoleNames.size ? ` Missing roles that could not be connected: **${[...missingRoleNames].join(", ")}**. Run \`/community-role-panels\`, then run this command again.` : ""} Nymera will activate them automatically within one minute.`,
         ephemeral: true
       });
     }
