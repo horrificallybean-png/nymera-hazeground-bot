@@ -308,6 +308,7 @@ export const configurationCommands = [
                         OR: [
                             { content: { contains: "{{magic_six_daily_" } },
                             { content: { contains: mentalHealthMarker } },
+                            { content: { contains: "{{daily_night_checkin}}" } },
                             { content: { in: ["{{daily_morning}}", "{{daily_midday}}", "{{daily_evening}}", "{{daily_night}}"] } }
                         ]
                     }
@@ -343,6 +344,15 @@ export const configurationCommands = [
                     hour: 15,
                     timezone
                 });
+                await prisma.scheduledPost.create({
+                    data: {
+                        guildId: i.guildId,
+                        channelId: wellness.id,
+                        content: `${wellnessRole ? `<@&${wellnessRole.id}>\n` : ""}{{daily_night_checkin}}`,
+                        cron: "0 22 * * *",
+                        timezone
+                    }
+                });
                 await publishServerRules(rulesChannel);
                 await i.editReply(`Complete horror-themed setup finished.\n\n` +
                     `• **12 categories**, **31 text channels**, and **6 voice channels** are ready\n` +
@@ -353,7 +363,8 @@ export const configurationCommands = [
                     `• Welcome, goodbye, logs, tickets, starboard, autorole, levels, automod, and AI configured\n` +
                     `• Automatic games run every **90 minutes** in ${games}\n` +
                     `• Six magic posts and four community messages are scheduled daily\n` +
-                    `• Mental-health check-in runs daily at **3 PM**\n\n` +
+                    `• Mental-health check-in runs daily at **3 PM**\n` +
+                    `• Nighttime wellness check-in runs daily at **10 PM**\n\n` +
                     `Nymera will activate every new schedule automatically within one minute. Add social feeds to ${social}; Twitch and social feeds still require your account URLs or credentials.`);
                 return;
             }

@@ -202,7 +202,9 @@ export async function generateDynamicScheduledContent(template: string, fallback
   };
   const formatRule = kind === "herb_lore"
     ? "Write a declarative educational lore post. Do not ask the reader any question and do not include a reflection prompt."
-    : sixDailyRules[kind] ?? "";
+    : kind.includes("night_checkin")
+      ? "Write a gentle nighttime community wellness check-in. Never diagnose, pressure disclosure, or imply professional care. Encourage rest and optional connection."
+      : sixDailyRules[kind] ?? "";
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await client.responses.create({

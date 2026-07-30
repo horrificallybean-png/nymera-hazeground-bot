@@ -29,6 +29,12 @@ const dailyRotations = {
         "🖤 **Rest Beneath the Moon**\nYou have done enough for today. Make your space comfortable and allow unfinished things to remain unfinished.",
         "✨ **Closing the Day**\nRelease one worry, remember one good moment, and offer yourself the same kindness you would give a friend."
     ],
+    "{{daily_night_checkin}}": [
+        "🌙 **Nighttime Check-In**\nHow are you arriving at the end of today? Share only what feels comfortable. Drink some water, soften your shoulders, and remember that peer support is not professional care.",
+        "🕯️ **A Gentle Pause Before Rest**\nYou made it through the day. If you would like company, tell the coven whether you need encouragement, quiet conversation, or simply a listening ear. No explanation is required.",
+        "🌿 **Evening Wellness Check**\nBefore the night grows quiet, consider food, water, regular medication, rest, and one small comfort. You deserve care without having to earn it.",
+        "✨ **The Haze Settles for the Night**\nLeave a heart, an emoji, or a few words if you want to check in. There is no pressure to share. Reach out to someone you trust or a qualified professional when you need more support."
+    ],
     "{{daily_wellness}}": [
         "🌿 How are you feeling today?\n🟢 Doing well • 🟡 Managing • 🟠 Struggling • 🔴 Could use support • 💜 Not ready to share\nYou never have to share more than feels comfortable.",
         "💜 **Gentle Check-In**\nWhat do you need most today: rest, encouragement, connection, quiet, or practical help? Be kind to yourself and others.",
