@@ -82,7 +82,7 @@ async function hostChoice(channel, activity, config) {
         orderBy: { createdAt: "desc" },
         take: 20
     });
-    const generated = await generateAutoGameRound(activity.game, activity, recent.map(entry => entry.question));
+    const generated = await generateAutoGameRound(activity.title, activity, recent.map(entry => entry.question));
     const sessionId = randomBytes(5).toString("hex");
     const row = new ActionRowBuilder().addComponents(generated.choices.map((choice, index) => new ButtonBuilder().setCustomId(`autogame:${sessionId}:${index}`).setLabel(`${index + 1}. ${choice}`).setStyle(ButtonStyle.Secondary)));
     const message = await channel.send({
@@ -343,7 +343,7 @@ export async function launchAutoGame(client, guildId) {
     let activity = baseActivity;
     if (baseActivity.type !== "choice") {
         const generated = await generateAutoActivityContent({
-            game: baseActivity.game,
+            game: `${baseActivity.title} (${baseActivity.game})`,
             type: baseActivity.type,
             fallback: {
                 title: baseActivity.title,

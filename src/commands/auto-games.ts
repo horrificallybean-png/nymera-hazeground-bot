@@ -4,7 +4,7 @@ import {
 import type { Command } from "../types.js";
 import { prisma } from "../database.js";
 import { launchAutoGame } from "../services/auto-games.js";
-import { aiConfigured, testAutoGameAi } from "../services/ai.js";
+import { aiConfigured, getAutoGameAiStatus, testAutoGameAi } from "../services/ai.js";
 
 export const autoGameCommands: Command[] = [{
   data: new SlashCommandBuilder().setName("auto-games").setDescription("Configure Nymera's rotating activity host")
@@ -69,8 +69,12 @@ export const autoGameCommands: Command[] = [{
     }
     const config = await prisma.autoGameConfig.findUnique({ where: { guildId: i.guildId! } });
     if (sub === "status") {
+      const aiStatus = getAutoGameAiStatus();
+      const generationStatus = aiStatus.attemptedAt
+        ? `${aiStatus.result === "success" ? "fresh AI content used" : aiStatus.result === "failed" ? "fallback used" : aiStatus.result} <t:${Math.floor(aiStatus.attemptedAt.getTime() / 1000)}:R>${aiStatus.error ? `\nLast AI error: \`${aiStatus.error}\`` : ""}`
+        : "not attempted since this restart";
       await i.reply({ content: config
-        ? `Status: **${config.enabled ? "enabled" : "disabled"}**\nChannel: <#${config.channelId}>\nInterval: ${config.intervalMinutes} minutes\nAnswer window: ${Math.ceil(config.answerSeconds / 60)} minutes\nGame-interest role pings: **automatic**\nExtra ping role: ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "none"}\nAI activity generation: **${aiConfigured ? "configured" : "using built-in fallback"}**\nLast game: ${config.lastRunAt ? `<t:${Math.floor(config.lastRunAt.getTime() / 1000)}:R>` : "never"}`
+        ? `Status: **${config.enabled ? "enabled" : "disabled"}**\nChannel: <#${config.channelId}>\nInterval: ${config.intervalMinutes} minutes\nAnswer window: ${Math.ceil(config.answerSeconds / 60)} minutes\nGame-interest role pings: **automatic**\nExtra ping role: ${config.pingRoleId ? `<@&${config.pingRoleId}>` : "none"}\nAI activity generation: **${aiConfigured ? "configured" : "using built-in fallback"}**\nLast generation: **${generationStatus}**\nLast game: ${config.lastRunAt ? `<t:${Math.floor(config.lastRunAt.getTime() / 1000)}:R>` : "never"}`
         : "Automatic games are not configured.", ephemeral: true });
       return;
     }

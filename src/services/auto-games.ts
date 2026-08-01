@@ -134,7 +134,7 @@ async function hostChoice(channel: TextChannel, activity: ChoiceActivity, config
     orderBy: { createdAt: "desc" },
     take: 20
   });
-  const generated = await generateAutoGameRound(activity.game, activity, recent.map(entry => entry.question));
+  const generated = await generateAutoGameRound(activity.title, activity, recent.map(entry => entry.question));
   const sessionId = randomBytes(5).toString("hex");
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(generated.choices.map((choice, index) =>
     new ButtonBuilder().setCustomId(`autogame:${sessionId}:${index}`).setLabel(`${index + 1}. ${choice}`).setStyle(ButtonStyle.Secondary)
@@ -401,7 +401,7 @@ export async function launchAutoGame(client: Client, guildId: string): Promise<A
   let activity: Activity = baseActivity;
   if (baseActivity.type !== "choice") {
     const generated = await generateAutoActivityContent({
-      game: baseActivity.game,
+      game: `${baseActivity.title} (${baseActivity.game})`,
       type: baseActivity.type,
       fallback: {
         title: baseActivity.title,

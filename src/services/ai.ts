@@ -27,6 +27,10 @@ let autoGameAiStatus: {
   attemptedAt: null
 };
 
+export function getAutoGameAiStatus() {
+  return { ...autoGameAiStatus };
+}
+
 const gameRoundSchema = z.object({
   title: z.string().min(3).max(80),
   question: z.string().min(8).max(300),
@@ -81,7 +85,7 @@ export async function generateAutoGameRound(
     return fallback;
   }
   try {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
       const response = await client.responses.parse({
         model: env.OPENAI_MODEL,
         instructions: `${personality}
@@ -91,14 +95,15 @@ Return only JSON with: title, question, choices (exactly four strings), answer (
         input: `Topic: ${topic}.
 Do not repeat or closely paraphrase any of these recent questions:
 ${recentQuestions.slice(0, 20).map(question => `- ${question}`).join("\n") || "- None"}
-Create a genuinely different question with a different answer concept. Variety attempt: ${attempt + 1}.`,
+Create a genuinely different question with a different answer concept.
+Freshness nonce: ${Date.now()}-${attempt}. Variety attempt: ${attempt + 1}.`,
         reasoning: { effort: "low" },
         max_output_tokens: 2_000,
         text: { format: zodTextFormat(gameRoundSchema, "game_round") }
       });
       const generated = response.output_parsed;
       if (!generated) {
-        if (attempt === 0) continue;
+        if (attempt < 3) continue;
         throw new Error(incompleteResponseReason(response));
       }
       if (isTooSimilar(generated.question, recentQuestions)) continue;
@@ -147,7 +152,7 @@ export async function generateAutoActivityContent(input: {
     wordchain: "Create a word-chain or Last Letter round. Include one ordinary English `startWord` of 2-20 letters and explain that each word begins with the previous word's last letter."
   };
   try {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
       const response = await client.responses.parse({
         model: env.OPENAI_MODEL,
         instructions: `${personality}
@@ -161,6 +166,7 @@ Recent prompts to avoid:
 ${input.recentQuestions?.slice(0, 20).map(question => `- ${question}`).join("\n") || "- None"}
 Fallback structure:
 ${JSON.stringify(input.fallback)}
+Freshness nonce: ${Date.now()}-${attempt}.
 Variety attempt: ${attempt + 1}.`,
         reasoning: { effort: "low" },
         max_output_tokens: 2_000,
@@ -168,7 +174,7 @@ Variety attempt: ${attempt + 1}.`,
       });
       const generated = response.output_parsed;
       if (!generated) {
-        if (attempt === 0) continue;
+        if (attempt < 3) continue;
         throw new Error(incompleteResponseReason(response));
       }
       if (input.type === "text" && !generated.answers?.length) throw new Error("AI text activity omitted answers");
@@ -206,7 +212,7 @@ export async function generateDynamicScheduledContent(template: string, fallback
       ? "Write a gentle nighttime community wellness check-in. Never diagnose, pressure disclosure, or imply professional care. Encourage rest and optional connection."
       : sixDailyRules[kind] ?? "";
   try {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
       const response = await client.responses.create({
         model: env.OPENAI_MODEL,
         instructions: `${personality}
@@ -225,6 +231,7 @@ ${fallback}
 
 Recent posts that must not be repeated or closely paraphrased:
 ${recentContent.slice(0, 12).map(content => `- ${content}`).join("\n") || "- None"}
+Freshness nonce: ${Date.now()}-${attempt}.
 Variety attempt: ${attempt + 1}.`,
         reasoning: { effort: "low" },
         max_output_tokens: 1_200
@@ -243,7 +250,7 @@ Variety attempt: ${attempt + 1}.`,
 export async function generateConversationStarter(fallback: string, recentContent: readonly string[] = []) {
   if (!client) return fallback;
   try {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
       const response = await client.responses.create({
         model: env.OPENAI_MODEL,
         instructions: `${personality}
@@ -256,6 +263,7 @@ Keep it under 280 characters. Return only the finished conversation starter.`,
 Fallback: ${fallback}
 Recent posts:
 ${recentContent.slice(0, 12).map(content => `- ${content}`).join("\n") || "- None"}
+Freshness nonce: ${Date.now()}-${attempt}.
 Variety attempt: ${attempt + 1}.`,
         max_output_tokens: 180
       });
