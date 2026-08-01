@@ -18,6 +18,7 @@ import { startBackupMonitor } from "../services/backups.js";
 import { startConversationStarterMonitor } from "../services/conversation-starters.js";
 import { startTwitchAlertMonitor } from "../services/twitch-alerts.js";
 import { startSocialFeedMonitor } from "../services/social-feeds.js";
+import { handleContinuousGameMessage } from "../services/continuous-games.js";
 const xpCooldowns = new Map();
 const autoReplyCooldowns = new Map();
 async function sendAiModerationReview(message, trigger) {
@@ -268,6 +269,8 @@ export function registerEvents(client) {
                 void sendAiModerationReview(message, "basic automod action");
                 return;
             }
+            if (await handleContinuousGameMessage(message))
+                return;
             if (message.guild && !message.author.bot && message.content.trim().length >= 3) {
                 const key = `${message.guild.id}:${message.author.id}`;
                 const now = Date.now();

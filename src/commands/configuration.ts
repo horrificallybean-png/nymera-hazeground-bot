@@ -14,6 +14,7 @@ import { createCommunityRolePanels } from "./community.js";
 import { createThemedLevelRoles } from "./levels.js";
 import { discordAsset } from "../services/assets.js";
 import { runScheduledPostNow } from "../services/scheduler.js";
+import { postContinuousGameInstructions } from "../services/continuous-games.js";
 
 const mentalHealthMarker = "🌿 **Gentle Mental Health Check-In**";
 
@@ -270,6 +271,8 @@ export const configurationCommands: Command[] = [
         const magic = await findOrCreateTextChannel(i, archives, "🔮・𝖋𝖔𝖗𝖇𝖎𝖉𝖉𝖊𝖓-𝖑𝖔𝖗𝖊", "Nymera's automatic magical lore and reflections.", ["forbidden-lore"]);
         await findOrCreateTextChannel(i, archives, "🌙・𝖒𝖔𝖔𝖓𝖑𝖎𝖙-𝖗𝖎𝖙𝖚𝖆𝖑𝖘", "Reflective practices, tarot, herbs, astrology, and folklore.", ["moonlit-rituals"]);
         const games = await findOrCreateTextChannel(i, arcade, "🎮・𝖌𝖆𝖒𝖊𝖘-𝖎𝖓-𝖙𝖍𝖊-𝖉𝖆𝖗𝖐", "Automatic games, riddles, trivia, encounters, and giveaways.", ["games-in-the-dark"]);
+        const counting = await findOrCreateTextChannel(i, arcade, "🔢・𝖊𝖓𝖉𝖑𝖊𝖘𝖘-𝖈𝖔𝖚𝖓𝖙𝖎𝖓𝖌", "An always-running community counting game saved by Nymera.", ["counting-game", "endless-counting"]);
+        const wordChain = await findOrCreateTextChannel(i, arcade, "⛓️・𝖊𝖙𝖊𝖗𝖓𝖆𝖑-𝖜𝖔𝖗𝖉-𝖈𝖍𝖆𝖎𝖓", "An endless last-letter word chain saved by Nymera.", ["word-chain", "endless-word-chain"]);
         await findOrCreateTextChannel(i, arcade, "🩸・𝖙𝖗𝖎𝖆𝖑𝖘-𝖎𝖓-𝖙𝖍𝖊-𝖋𝖔𝖌", "Dead by Daylight discussion, builds, lore, and challenges.", ["trials-in-the-fog"]);
         await findOrCreateTextChannel(i, arcade, "👻・𝖍𝖔𝖗𝖗𝖔𝖗-𝖌𝖆𝖒𝖊𝖘", "Survival horror, paranormal games, and frightening adventures.");
         await findOrCreateTextChannel(i, arcade, "🍄・𝖈𝖔𝖟𝖞-𝖌𝖆𝖒𝖊𝖘", "Comforting games, farming sims, and peaceful adventures.");
@@ -373,6 +376,12 @@ export const configurationCommands: Command[] = [
           update: { channelId: games.id, pingRoleId: gameAlertRole?.id, enabled: true, intervalMinutes: 90, answerSeconds: 300 },
           create: { guildId: i.guildId!, channelId: games.id, pingRoleId: gameAlertRole?.id, intervalMinutes: 90, answerSeconds: 300 }
         });
+        await prisma.continuousGameConfig.upsert({
+          where: { guildId: i.guildId! },
+          update: { countingChannelId: counting.id, wordChainChannelId: wordChain.id },
+          create: { guildId: i.guildId!, countingChannelId: counting.id, wordChainChannelId: wordChain.id }
+        });
+        await postContinuousGameInstructions(counting, wordChain);
 
         const magicAlertRole = i.guild!.roles.cache.find(role => role.name.toLowerCase() === "magic post alerts");
         const wellnessRole = i.guild!.roles.cache.find(role => role.name.toLowerCase() === "wellness check-in alerts");
@@ -431,13 +440,14 @@ export const configurationCommands: Command[] = [
 
         await i.editReply(
           `Complete horror-themed setup finished.\n\n` +
-          `• **12 categories**, **31 text channels**, and **6 voice channels** are ready\n` +
+          `• **12 categories**, **33 text channels**, and **6 voice channels** are ready\n` +
           `• Partner-server area and private staff headquarters created\n` +
           `• Community panels: **${panelSummary}**\n` +
           `• Coven rules embed posted in ${rulesChannel}\n` +
           `• **${levelRoles.length} level roles** connected\n` +
           `• Welcome, goodbye, logs, tickets, starboard, autorole, levels, automod, and AI configured\n` +
           `• Automatic games run every **90 minutes** in ${games}\n` +
+          `• Endless counting and word-chain games are active in their own channels\n` +
           `• Six magic posts and four community messages are scheduled daily\n` +
           `• Mental-health check-in runs daily at **3 PM**\n` +
           `• Nighttime wellness check-in runs daily at **10 PM**\n\n` +

@@ -2,6 +2,7 @@ import { ChannelType, PermissionFlagsBits, SlashCommandBuilder } from "discord.j
 import { prisma } from "../database.js";
 import { launchAutoGame } from "../services/auto-games.js";
 import { aiConfigured, getAutoGameAiStatus, testAutoGameAi } from "../services/ai.js";
+import { postContinuousGameInstructions } from "../services/continuous-games.js";
 export const autoGameCommands = [{
         data: new SlashCommandBuilder().setName("auto-games").setDescription("Configure Nymera's rotating activity host")
             .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
@@ -13,9 +14,55 @@ export const autoGameCommands = [{
             .addSubcommand(s => s.setName("disable").setDescription("Disable automatic games"))
             .addSubcommand(s => s.setName("status").setDescription("Show automatic-game settings"))
             .addSubcommand(s => s.setName("ai-test").setDescription("Test AI-generated trivia without posting a game"))
-            .addSubcommand(s => s.setName("start-now").setDescription("Start the next game immediately")),
+            .addSubcommand(s => s.setName("start-now").setDescription("Start the next game immediately"))
+            .addSubcommand(s => s.setName("continuous-setup").setDescription("Configure always-running counting and word-chain channels")
+            .addChannelOption(o => o.setName("counting_channel").setDescription("Dedicated endless-counting channel").setRequired(true).addChannelTypes(ChannelType.GuildText))
+            .addChannelOption(o => o.setName("word_chain_channel").setDescription("Dedicated endless word-chain channel").setRequired(true).addChannelTypes(ChannelType.GuildText)))
+            .addSubcommand(s => s.setName("continuous-status").setDescription("Show the current endless-game progress"))
+            .addSubcommand(s => s.setName("continuous-reset").setDescription("Reset one always-running game")
+            .addStringOption(o => o.setName("game").setDescription("Game to reset").setRequired(true).addChoices({ name: "Counting", value: "counting" }, { name: "Word Chain", value: "wordchain" }))),
         async execute(i) {
             const sub = i.options.getSubcommand();
+            if (sub === "continuous-setup") {
+                const counting = i.options.getChannel("counting_channel", true);
+                const wordChain = i.options.getChannel("word_chain_channel", true);
+                if (counting.id === wordChain.id) {
+                    return void await i.reply({ content: "Choose two different channels for the continuous games.", ephemeral: true });
+                }
+                await i.deferReply({ ephemeral: true });
+                await prisma.continuousGameConfig.upsert({
+                    where: { guildId: i.guildId },
+                    update: { countingChannelId: counting.id, wordChainChannelId: wordChain.id },
+                    create: { guildId: i.guildId, countingChannelId: counting.id, wordChainChannelId: wordChain.id }
+                });
+                await postContinuousGameInstructions(counting, wordChain);
+                await i.editReply(`Endless counting is active in ${counting}, and the eternal word chain is active in ${wordChain}.`);
+                return;
+            }
+            if (sub === "continuous-status") {
+                const continuous = await prisma.continuousGameConfig.findUnique({ where: { guildId: i.guildId } });
+                await i.reply({
+                    content: continuous
+                        ? `**Endless Counting**\nChannel: <#${continuous.countingChannelId}>\nCurrent number: **${continuous.countingCurrent}**\nNext number: **${continuous.countingCurrent + 1}**\n\n**Eternal Word Chain**\nChannel: <#${continuous.wordChainChannelId}>\nCurrent word: **${continuous.wordChainCurrentWord}**\nNext letter: **${continuous.wordChainCurrentWord.at(-1)?.toUpperCase()}**`
+                        : "Continuous games are not configured. Run `/auto-games continuous-setup` or `/setup complete`.",
+                    ephemeral: true
+                });
+                return;
+            }
+            if (sub === "continuous-reset") {
+                const game = i.options.getString("game", true);
+                const result = await prisma.continuousGameConfig.updateMany({
+                    where: { guildId: i.guildId },
+                    data: game === "counting"
+                        ? { countingCurrent: 0, countingLastUserId: null }
+                        : { wordChainCurrentWord: "moon", wordChainLastUserId: null, wordChainUsedWords: "[\"moon\"]" }
+                });
+                await i.reply({
+                    content: result.count ? `${game === "counting" ? "Endless counting" : "The eternal word chain"} was reset.` : "Continuous games are not configured.",
+                    ephemeral: true
+                });
+                return;
+            }
             if (sub === "setup") {
                 const channel = i.options.getChannel("channel", true);
                 const minutes = i.options.getInteger("minutes") ?? 90;

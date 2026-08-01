@@ -524,3 +524,16 @@ model AutoGameHistory {
 
   @@index([guildId, createdAt])
 }
+
+model ContinuousGameConfig {
+  guildId             String   @id
+  countingChannelId   String
+  countingCurrent     Int      @default(0)
+  countingLastUserId  String?
+  wordChainChannelId  String
+  wordChainCurrentWord String   @default("moon")
+  wordChainLastUserId String?
+  wordChainUsedWords  String   @default("[\"moon\"]")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
